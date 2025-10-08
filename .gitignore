@@ -1,0 +1,29 @@
+# Ignore local build directories for ErrorEstimation
+build/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# Make and object files
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.exe
+
+# IDE / editor
+.vscode/
+*.user
+*.suo
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# MacOS
+.DS_Store
