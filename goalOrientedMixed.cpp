@@ -108,62 +108,66 @@ int main(int argc, char *const argv[]) {
 
   // --- h-refinement loop ---
 
-  TPZGeoMesh *gmesh = createGeoMesh({16, 16, 16}, {0., 0., 0.}, {1., 1., 1.});
+  int iteration = 0;
+  TPZGeoMesh *gmesh = createGeoMesh({2, 2, 2}, {0., 0., 0.}, {1., 1., 1.});
 
-  TPZMultiphysicsCompMesh *cmeshMixed =
-      createCompMeshMixed(gmesh, mixed_order, true);
-  TPZMultiphysicsCompMesh *cmeshDual =
-      createCompMeshMixedDual(gmesh, mixed_order + 1, true);
+  while (iteration < 6) {
+    TPZMultiphysicsCompMesh *cmeshMixed =
+        createCompMeshMixed(gmesh, mixed_order, true);
+    TPZMultiphysicsCompMesh *cmeshDual =
+        createCompMeshMixedDual(gmesh, mixed_order + 1, true);
 
-  // Mixed solver
-  TPZLinearAnalysis anMixed(cmeshMixed);
-  TPZSSpStructMatrix<STATE> matMixed(cmeshMixed);
-  matMixed.SetNumThreads(gthreads);
-  anMixed.SetStructuralMatrix(matMixed);
-  TPZStepSolver<STATE> stepMixed;
-  stepMixed.SetDirect(ELDLt);
-  anMixed.SetSolver(stepMixed);
-  anMixed.Run();
-  anMixed.SetThreadsForError(gthreads);
+    // Mixed solver
+    TPZLinearAnalysis anMixed(cmeshMixed);
+    TPZSSpStructMatrix<STATE> matMixed(cmeshMixed);
+    matMixed.SetNumThreads(gthreads);
+    anMixed.SetStructuralMatrix(matMixed);
+    TPZStepSolver<STATE> stepMixed;
+    stepMixed.SetDirect(ELDLt);
+    anMixed.SetSolver(stepMixed);
+    anMixed.Run();
+    anMixed.SetThreadsForError(gthreads);
 
-  // Dual solver
-  TPZLinearAnalysis anDual(cmeshDual);
-  TPZSSpStructMatrix<STATE> matDual(cmeshDual);
-  matDual.SetNumThreads(gthreads);
-  anDual.SetStructuralMatrix(matDual);
-  TPZStepSolver<STATE> stepDual;
-  stepDual.SetDirect(ELDLt);
-  anDual.SetSolver(stepDual);
-  anDual.Run();
-  anDual.SetThreadsForError(gthreads);
+    // Dual solver
+    TPZLinearAnalysis anDual(cmeshDual);
+    TPZSSpStructMatrix<STATE> matDual(cmeshDual);
+    matDual.SetNumThreads(gthreads);
+    anDual.SetStructuralMatrix(matDual);
+    TPZStepSolver<STATE> stepDual;
+    stepDual.SetDirect(ELDLt);
+    anDual.SetSolver(stepDual);
+    anDual.Run();
+    anDual.SetThreadsForError(gthreads);
 
-  // --- Plotting ---
+    // --- Plotting ---
 
-  {
-    const std::string plotfile = "mixed_plot";
-    constexpr int vtkRes{0};
-    TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
-    auto vtk = TPZVTKGenerator(cmeshMixed, fields, plotfile, vtkRes);
-    vtk.Do();
+    {
+      const std::string plotfile = "mixed_plot";
+      constexpr int vtkRes{0};
+      TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
+      auto vtk = TPZVTKGenerator(cmeshMixed, fields, plotfile, vtkRes);
+      vtk.Do();
+    }
+
+    {
+      const std::string plotfile = "dual_plot";
+      constexpr int vtkRes{0};
+      TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
+      auto vtk = TPZVTKGenerator(cmeshDual, fields, plotfile, vtkRes);
+      vtk.Do();
+    }
+
+    // --- Goal-oriented error estimation ---
+
+    REAL estimation = GoalEstimation(cmeshMixed, cmeshDual, gthreads);
+    std::cout << "\nEstimated goal-oriented error: " << estimation << std::endl;
+
+    // --- Clean up ---
+
+    delete cmeshDual;
+    delete cmeshMixed;
+    iteration++;
   }
-
-  {
-    const std::string plotfile = "dual_plot";
-    constexpr int vtkRes{0};
-    TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
-    auto vtk = TPZVTKGenerator(cmeshDual, fields, plotfile, vtkRes);
-    vtk.Do();
-  }
-
-  // --- Goal-oriented error estimation ---
-
-  REAL estimation = GoalEstimation(cmeshMixed, cmeshDual, gthreads);
-  std::cout << "\nEstimated goal-oriented error: " << estimation << std::endl;
-
-  // --- Clean up ---
-
-  delete cmeshDual;
-  delete cmeshMixed;
 }
 
 // =========
@@ -248,8 +252,11 @@ TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order, bool 
   TPZFMatrix<STATE> val1(1, 1, 0.);
   TPZManVector<STATE> val2(1, 1.);
   
-  val2[0] = 1.;
   TPZBndCondT<REAL> *bcond = matDarcy->CreateBC(matDarcy, EFarfield, 0, val1, val2);
+  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
+  hdivCreator->InsertMaterialObject(bcond);
+
+  bcond = matDarcy->CreateBC(matDarcy, EGoal, 0, val1, val2);
   bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
   hdivCreator->InsertMaterialObject(bcond);
 
@@ -277,15 +284,17 @@ TPZMultiphysicsCompMesh *createCompMeshMixedDual(TPZGeoMesh *gmesh, int order, b
 
   TPZMixedDarcyFlow* matDarcy = new TPZMixedDarcyFlow(EDomain, gmesh->Dimension());
   matDarcy->SetConstantPermeability(gperm);
-  matDarcy->SetForcingFunction(gexact.ForceFunc(), 4);
-  matDarcy->SetExactSol(gexact.ExactSolution(), 4);
   hdivCreator->InsertMaterialObject(matDarcy);
 
   TPZFMatrix<STATE> val1(1, 1, 0.);
   TPZManVector<STATE> val2(1, 1.);
   
-  val2[0] = -1.;
+  val2[0] = 1.;
   TPZBndCondT<REAL> *bcond = matDarcy->CreateBC(matDarcy, EGoal, 0, val1, val2);
+  hdivCreator->InsertMaterialObject(bcond);
+
+  val2[0] = 0.;
+  bcond = matDarcy->CreateBC(matDarcy, EFarfield, 0, val1, val2);
   hdivCreator->InsertMaterialObject(bcond);
 
   TPZMultiphysicsCompMesh *cmesh = hdivCreator->CreateApproximationSpace();
@@ -363,8 +372,7 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, int 
       REAL perm = gperm;
       REAL sqrtPerm = sqrt(perm);
 
-      REAL fluxError = 0.0;
-      REAL balanceError = 0.0;
+      REAL goalError = 0.0;
 
       // Set integration rule
       const TPZIntPoints* intrule = nullptr;
@@ -419,10 +427,10 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, int 
         REAL divTermA = divsigh[0]*zh[0];
         REAL divTermB = divpsih[0]*ph[0];
 
-        fluxError += (FTerm - FluxTerm - divTermA - divTermB) * weight;
+        goalError += (FTerm - FluxTerm - divTermA - divTermB) * weight;
       }
 
-      elementErrors[icel] = abs(fluxError);
+      elementErrors[icel] = goalError;
       localTotalError += elementErrors[icel];
     }
     partialErrors[tid] = localTotalError;
@@ -446,30 +454,32 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, int 
   std::cout << "\nTotal estimated error: " << totalError << std::endl;
 
   // h-refinement based on estimator
-//   REAL maxError = *std::max_element(elementErrors.begin(), elementErrors.end());
-//   TPZVec<int64_t> needRefinement;
-//   for (int64_t i = 0; i < ncel; ++i) {
-//     if (elementErrors[i] > ptol*maxError) {
-//       TPZGeoEl *gel = elementvec_m[i]->Reference();
-//       TPZVec<TPZGeoEl *> pv;
-//       gel->Divide(pv);
+  // REAL maxError = *std::max_element(elementErrors.begin(), elementErrors.end());
+  REAL maxError = *std::max_element(elementErrors.begin(), elementErrors.end(),
+    [](REAL a, REAL b) { return std::abs(a) < std::abs(b); });
+  TPZVec<int64_t> needRefinement;
+  for (int64_t i = 0; i < ncel; ++i) {
+    if (abs(elementErrors[i]) > ptol*maxError) {
+      TPZGeoEl *gel = elementvec_m[i]->Reference();
+      TPZVec<TPZGeoEl *> pv;
+      gel->Divide(pv);
 
-//       // Refine boundary
-//       int firstside = gel->FirstSide(2);
-//       int lastside = gel->FirstSide(3);
-//       for (int side = firstside; side < lastside; ++side) {
-//         TPZGeoElSide gelSide(gel, side);
-//         std::set<int> bcIds = {EFarfield, ECylinder, ETampa, ECurveTampa};
-//         TPZGeoElSide neigh = gelSide.HasNeighbour(bcIds);
-//         if (neigh) {
-//           TPZGeoEl *neighGel = neigh.Element();
-//           if (neighGel->Dimension() != 2) DebugStop();
-//           TPZVec<TPZGeoEl *> pv2;
-//           neighGel->Divide(pv2);
-//         }
-//       }
-//     }
-//   }
+      // Refine boundary
+      int firstside = gel->FirstSide(2);
+      int lastside = gel->FirstSide(3);
+      for (int side = firstside; side < lastside; ++side) {
+        TPZGeoElSide gelSide(gel, side);
+        std::set<int> bcIds = {EFarfield, EGoal, ECylinder, ETampa, ECurveTampa};
+        TPZGeoElSide neigh = gelSide.HasNeighbour(bcIds);
+        if (neigh) {
+          TPZGeoEl *neighGel = neigh.Element();
+          if (neighGel->Dimension() != 2) DebugStop();
+          TPZVec<TPZGeoEl *> pv2;
+          neighGel->Divide(pv2);
+        }
+      }
+    }
+  }
 
   // Uniform refinement
   // TPZCheckGeom checkgeom(cmeshMixed->Reference());
