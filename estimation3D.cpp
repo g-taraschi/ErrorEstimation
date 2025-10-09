@@ -66,7 +66,7 @@ REAL ElementDiameter(TPZGeoEl *gel);
 // Creates a computational mesh for H1 approximation
 TPZCompMesh *createCompMeshH1(TPZGeoMesh *gmesh, int order = 1);
 
-// Creates a computational mesh for mixed approximation with hybridization
+// Creates a computational mesh for mixed approximation
 TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order = 1, bool isCondensed = false);
 
 // Creates a computational mesh for mixed approximation
@@ -88,7 +88,7 @@ int main(int argc, char *const argv[]) {
   TPZLogger::InitializePZLOG("logpz.txt");
 #endif
 
-  gperm = 1.0;
+  gperm = 3.0;
 
   // --- Solve darcy problem ---
 
@@ -104,7 +104,7 @@ int main(int argc, char *const argv[]) {
 
   // --- h-refinement loop ---
 
-  while (h1_order < 2) {
+  while (h1_order < 4) {
     hrefFile << "\n\nOrder H1: " << h1_order << ", Order Mixed: " << mixed_order
              << "\n";
     // Initial mesh
@@ -112,7 +112,7 @@ int main(int argc, char *const argv[]) {
     TPZGeoMesh *gmesh = createGeoMesh({2, 2, 2}, {0., 0., 0.}, {1., 1., 1.});
     int iteration = 0;
     REAL estimatedError = 1.;
-    while (iteration < 2) {
+    while (iteration < 6) {
       TPZMultiphysicsCompMesh *cmeshMixed = createCompMeshMixed(gmesh, mixed_order, true);
       TPZCompMesh *cmeshH1 = createCompMeshH1(gmesh, h1_order);
 
@@ -168,6 +168,7 @@ int main(int argc, char *const argv[]) {
       errorsMixed[1] = (1. / sqrt(gperm)) * errorsMixed[1];
 
       estimatedError = ErrorEstimation(cmeshMixed, cmeshH1, gthreads);
+      REAL PgSyDiff = estimatedError*estimatedError - errorsH1[0]*errorsH1[0] - errorsMixed[1]*errorsMixed[1];
 
       // Print results
       std::cout << "\nIteration " << iteration << ":\n"
@@ -183,7 +184,7 @@ int main(int argc, char *const argv[]) {
       hrefFile << std::scientific << std::setprecision(3) << estimatedError
                << " & " << errorsH1[0] << " & " << estimatedError / errorsH1[0]
                << " & " << estimatedError << " & " << errorsMixed[1] << " & "
-               << estimatedError / errorsMixed[1] << std::endl;
+               << estimatedError / errorsMixed[1] << " & " << PgSyDiff << std::endl;
 
       iteration++;
 
