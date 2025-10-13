@@ -64,7 +64,7 @@ TPZGeoMesh* createGeoMesh(
 REAL ElementDiameter(TPZGeoEl *gel);
 
 // Creates a computational mesh for H1 approximation
-TPZCompMesh *createCompMeshH1(TPZGeoMesh *gmesh, int order = 1);
+TPZCompMesh *createCompMeshH1(TPZGeoMesh *gmesh, int order);
 
 // Creates a computational mesh for mixed approximation
 TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order = 1, bool isCondensed = false);
@@ -88,12 +88,12 @@ int main(int argc, char *const argv[]) {
   TPZLogger::InitializePZLOG("logpz.txt");
 #endif
 
-  gperm = 3.0;
+  gperm = 1.0;
 
   // --- Solve darcy problem ---
 
   int mixed_order = 1; // Polynomial order
-  int h1_order = 1;
+  int h1_order = 3;
 
   // Set a problem with analytic solution
   gexact.fExact = TLaplaceExample1::ESinSin;
@@ -111,8 +111,8 @@ int main(int argc, char *const argv[]) {
     // TPZGeoMesh *gmesh = createGeoMesh("mesh3D.msh");
     TPZGeoMesh *gmesh = createGeoMesh({2, 2, 2}, {0., 0., 0.}, {1., 1., 1.});
     int iteration = 0;
-    REAL estimatedError = 1.;
-    while (iteration < 6) {
+    REAL estimatedError = 0.;
+    while (iteration < 4) {
       TPZMultiphysicsCompMesh *cmeshMixed = createCompMeshMixed(gmesh, mixed_order, true);
       TPZCompMesh *cmeshH1 = createCompMeshH1(gmesh, h1_order);
 
@@ -140,21 +140,21 @@ int main(int argc, char *const argv[]) {
 
       // ---- Plotting ---
 
-      // {
-      //   const std::string plotfile = "h1_plot";
-      //   constexpr int vtkRes{0};
-      //   TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
-      //   auto vtk = TPZVTKGenerator(cmeshH1, fields, plotfile, vtkRes);
-      //   vtk.Do();
-      // }
+      {
+        const std::string plotfile = "h1_plot";
+        constexpr int vtkRes{0};
+        TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
+        auto vtk = TPZVTKGenerator(cmeshH1, fields, plotfile, vtkRes);
+        vtk.Do();
+      }
 
-      // {
-      //   const std::string plotfile = "mixed_plot";
-      //   constexpr int vtkRes{0};
-      //   TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
-      //   auto vtk = TPZVTKGenerator(cmeshMixed, fields, plotfile, vtkRes);
-      //   vtk.Do();
-      // }
+      {
+        const std::string plotfile = "mixed_plot";
+        constexpr int vtkRes{0};
+        TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
+        auto vtk = TPZVTKGenerator(cmeshMixed, fields, plotfile, vtkRes);
+        vtk.Do();
+      }
 
       // --- Error Estimation ---
 
@@ -168,13 +168,13 @@ int main(int argc, char *const argv[]) {
       errorsMixed[1] = (1. / sqrt(gperm)) * errorsMixed[1];
 
       estimatedError = ErrorEstimation(cmeshMixed, cmeshH1, gthreads);
-      REAL PgSyDiff = estimatedError*estimatedError - errorsH1[0]*errorsH1[0] - errorsMixed[1]*errorsMixed[1];
+      REAL PgSyDiff = estimatedError*estimatedError - errorsH1[2]*errorsH1[2] - errorsMixed[1]*errorsMixed[1];
 
       // Print results
       std::cout << "\nIteration " << iteration << ":\n"
                 << "    Estimated Error for H1 = " << estimatedError
-                << ", Actual error for H1 = " << errorsH1[0]
-                << ", Effective index H1 = " << estimatedError / errorsH1[0]
+                << ", Actual error for H1 = " << errorsH1[2]
+                << ", Effective index H1 = " << estimatedError / errorsH1[2]
                 << "\n"
                 << "    Estimated Error for Mixed = " << estimatedError
                 << ", Actual error for Mixed = " << errorsMixed[1]
@@ -182,7 +182,7 @@ int main(int argc, char *const argv[]) {
                 << estimatedError / errorsMixed[1] << std::endl;
 
       hrefFile << std::scientific << std::setprecision(3) << estimatedError
-               << " & " << errorsH1[0] << " & " << estimatedError / errorsH1[0]
+               << " & " << errorsH1[2] << " & " << estimatedError / errorsH1[2]
                << " & " << estimatedError << " & " << errorsMixed[1] << " & "
                << estimatedError / errorsMixed[1] << " & " << PgSyDiff << std::endl;
 
@@ -285,16 +285,6 @@ TPZCompMesh *createCompMeshH1(TPZGeoMesh *gmesh, int order) {
   bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
   cmesh->InsertMaterialObject(bcond);
 
-  val2[0] = 2.0;
-  bcond = mat->CreateBC(mat, ECylinder, 0, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
-  cmesh->InsertMaterialObject(bcond);
-
-  val2[0] = 0.0;
-  bcond = mat->CreateBC(mat, ETampa, 1, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
-  cmesh->InsertMaterialObject(bcond);
-
   // val2[0] = 0.0;
   // bcond = mat->CreateBC(mat, ECurveTampa, 1, val1, val2);
   // // bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
@@ -302,102 +292,6 @@ TPZCompMesh *createCompMeshH1(TPZGeoMesh *gmesh, int order) {
 
   // Set up the computational mesh
   cmesh->AutoBuild();
-
-  return cmesh;
-}
-
-TPZMultiphysicsCompMesh *createCompMeshMixedOld(TPZGeoMesh *gmesh, int order) {
-
-  // --- Flux atomic cmesh ----
-
-  TPZCompMesh *cmeshFlux = new TPZCompMesh(gmesh);
-  cmeshFlux->SetDimModel(gmesh->Dimension());
-  cmeshFlux->SetDefaultOrder(order);
-  cmeshFlux->SetAllCreateFunctionsHDiv();
-
-  // Add materials (weak formulation)
-  TPZNullMaterial<STATE> *mat =
-      new TPZNullMaterial(EDomain, gmesh->Dimension());
-  cmeshFlux->InsertMaterialObject(mat);
-
-  // Create boundary conditions
-  TPZManVector<REAL, 1> val2(1, 0.); // Part that goes to the RHS vector
-  TPZFMatrix<REAL> val1(1, 1, 0.);   // Part that goes to the Stiffnes matrix
-
-  TPZBndCondT<REAL> *bcond = mat->CreateBC(mat, EFarfield, 0, val1, val2);
-  cmeshFlux->InsertMaterialObject(bcond);
-
-  bcond = mat->CreateBC(mat, ECylinder, 0, val1, val2);
-  cmeshFlux->InsertMaterialObject(bcond);
-
-  bcond = mat->CreateBC(mat, ETampa, 0, val1, val2);
-  cmeshFlux->InsertMaterialObject(bcond);
-
-  cmeshFlux->AutoBuild();
-
-  // --- Pressure atomic cmesh ---
-
-  TPZCompMesh *cmeshPressure = new TPZCompMesh(gmesh);
-  cmeshPressure->SetDimModel(gmesh->Dimension());
-  cmeshPressure->SetDefaultOrder(order);
-  if (order < 1) {
-    cmeshPressure->SetAllCreateFunctionsDiscontinuous();
-  } else {
-    cmeshPressure->SetAllCreateFunctionsContinuous();
-    cmeshPressure->ApproxSpace().CreateDisconnectedElements(true);
-  }
-
-  // Add materials (weak formulation)
-  cmeshPressure->InsertMaterialObject(mat);
-
-  // Set up the computational mesh
-  cmeshPressure->AutoBuild();
-
-  int ncon = cmeshPressure->NConnects();
-  const int lagLevel = 1; // Lagrange multiplier level
-  for (int i = 0; i < ncon; i++) {
-    TPZConnect &newnod = cmeshPressure->ConnectVec()[i];
-    newnod.SetLagrangeMultiplier(lagLevel);
-  }
-
-  // --- Multiphysics mesh ---
-
-  TPZMultiphysicsCompMesh *cmesh = new TPZMultiphysicsCompMesh(gmesh);
-  cmesh->SetDimModel(gmesh->Dimension());
-  cmesh->SetDefaultOrder(1);
-  cmesh->ApproxSpace().Style() = TPZCreateApproximationSpace::EMultiphysics;
-
-  // Add materials (weak formulation)
-  TPZMixedDarcyFlow *matDarcy =
-      new TPZMixedDarcyFlow(EDomain, gmesh->Dimension());
-  matDarcy->SetConstantPermeability(gperm);
-  matDarcy->SetForcingFunction(gexact.ForceFunc(), 4);
-  matDarcy->SetExactSol(gexact.ExactSolution(), 4);
-  cmesh->InsertMaterialObject(matDarcy);
-
-  // Create, set and add boundary conditions
-  val2[0] = 1.0;
-  bcond = matDarcy->CreateBC(matDarcy, EFarfield, 0, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
-  cmesh->InsertMaterialObject(bcond);
-
-  val2[0] = 2.0;
-  bcond = matDarcy->CreateBC(matDarcy, ECylinder, 0, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
-  cmesh->InsertMaterialObject(bcond);
-
-  val2[0] = 0.0;
-  bcond = matDarcy->CreateBC(matDarcy, ETampa, 1, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
-  cmesh->InsertMaterialObject(bcond);
-
-  // Incorporate the atomic meshes into the multiphysics mesh
-  TPZManVector<TPZCompMesh *, 2> cmeshes(2);
-  cmeshes[0] = cmeshFlux;
-  cmeshes[1] = cmeshPressure;
-
-  TPZManVector<int> active(cmeshes.size(), 1);
-  cmesh->BuildMultiphysicsSpace(active, cmeshes);
 
   return cmesh;
 }

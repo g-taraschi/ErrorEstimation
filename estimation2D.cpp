@@ -90,8 +90,8 @@ int main(int argc, char *const argv[]) {
   int order = 1; // Polynomial order
 
   // Set a problem with analytic solution
-  gexact.fExact = TLaplaceExample1::ESinSin;
-  // gexact.fExact = TLaplaceExample1::EHarmonic;
+  // gexact.fExact = TLaplaceExample1::ESinSin;
+  gexact.fExact = TLaplaceExample1::EHarmonic;
   gexact.fTensorPerm = {{gperm, 0., 0.},{0., gperm, 0.},{0., 0., gperm}};
 
   // --- Uniform h-refinement ---
@@ -155,6 +155,8 @@ int main(int argc, char *const argv[]) {
     anMixed.PostProcessError(errorsMixed, false, std::cout);
     errorsMixed[1] = (1./sqrt(gperm)) * errorsMixed[1];
 
+    REAL PgSyDiff = EstimatedErrorH1*EstimatedErrorH1 - errorsH1[2]*errorsH1[2] - errorsMixed[1]*errorsMixed[1];
+
     // Print results
     std::cout << "\nIteration " << iteration << ":\n"
               << "    Estimated Error for H1 = " << EstimatedErrorH1
@@ -163,6 +165,7 @@ int main(int argc, char *const argv[]) {
               << "    Estimated Error for Mixed = " << EstimatedErrorH1
               << ", Actual error for Mixed = " << errorsMixed[1]
               << ", Effective index Mixed = " << EstimatedErrorH1/errorsMixed[1]
+              << " PgSyDiff = " << PgSyDiff
               << std::endl;
 
     std::ofstream hrefFile("hrefTest.txt", std::ios::app);
@@ -170,7 +173,8 @@ int main(int argc, char *const argv[]) {
             << EstimatedErrorH1 << " & " << errorsH1[0] << " & "
             << EstimatedErrorH1 / errorsH1[0] << " & "
             << EstimatedErrorH1 << " & " << errorsMixed[1] << " & "
-            << EstimatedErrorH1 / errorsMixed[1] << std::endl;
+            << EstimatedErrorH1 / errorsMixed[1] << " & "
+            << PgSyDiff << std::endl;
 
     // --- Refine mesh ---
 
