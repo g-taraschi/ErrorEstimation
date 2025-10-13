@@ -35,14 +35,14 @@ TPZGeoMesh* MeshingUtils::ReadGeoMesh(std::string file) {
     stringtoint[3]["volume_reservoir"] = EDomain;
 
     stringtoint[2]["surface_wellbore_cylinder"] = ECylinder;
-    stringtoint[2]["surface_wellbore_heel"] = ETampa;
-    stringtoint[2]["surface_wellbore_toe"] = ETampa;
+    stringtoint[2]["surface_wellbore_heel"] = ECylinderBase;
+    stringtoint[2]["surface_wellbore_toe"] = ECylinderBase;
     stringtoint[2]["surface_farfield"] = EFarfield;
     stringtoint[2]["surface_cap_rock"] = EFarfield;
 
     stringtoint[1]["curve_wellbore"] = ENone;
-    stringtoint[1]["curve_heel"] = ECurveTampa;
-    stringtoint[1]["curve_toe"] = ECurveTampa;
+    stringtoint[1]["curve_heel"] = ENone;
+    stringtoint[1]["curve_toe"] = ENone;
 
     stringtoint[0]["point_heel"] = ENone;
     stringtoint[0]["point_toe"] = ENone;
@@ -79,10 +79,10 @@ TPZGeoMesh* MeshingUtils::CreateGeoMesh2D(const TPZManVector<int, 2> &nelDiv,
   TPZGenGrid2D generator(nelDiv, minX, maxX);
   generator.SetElementType(MMeshType::EQuadrilateral);
   generator.Read(gmesh, EDomain);
-  generator.SetBC(gmesh, 4, EFarfield);
-  generator.SetBC(gmesh, 5, EFarfield);
-  generator.SetBC(gmesh, 6, EFarfield);
-  generator.SetBC(gmesh, 7, EFarfield);
+  generator.SetBC(gmesh, 4, EBoundary);
+  generator.SetBC(gmesh, 5, EBoundary);
+  generator.SetBC(gmesh, 6, EBoundary);
+  generator.SetBC(gmesh, 7, EBoundary);
 
   return gmesh;
 }
@@ -95,7 +95,8 @@ TPZGeoMesh* MeshingUtils::CreateGeoMesh3D(
   TPZGenGrid3D generator(minX, maxX, nelDiv, MMeshType::EHexahedral);
 
   generator.BuildVolumetricElements(EDomain);
-  TPZGeoMesh *gmesh = generator.BuildBoundaryElements(EGoal, EFarfield, EFarfield, EFarfield, EFarfield, EFarfield);
+  TPZGeoMesh *gmesh = generator.BuildBoundaryElements(EBoundary,
+    EBoundary, EBoundary, EBoundary, EBoundary, EBoundary);
 
   return gmesh;
 }

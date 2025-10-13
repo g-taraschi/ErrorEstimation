@@ -11,18 +11,17 @@
 #include <tpzchangeel.h>
 #include <tpzgeoelrefpattern.h>
 
-class MeshingUtils {
+enum EnumMatIds {
+  EDomain = 1,
+  EBoundary = 2,
+  EFarfield = 3,
+  ECylinder = 4,
+  ECylinderBase = 5,
+  EGoal = 6,
+  ENone = -1
+};
 
-public:
-  enum EnumMatIds {
-    EDomain = 1,
-    EFarfield = 2,
-    ECylinder = 3,
-    ETampa = 4,
-    ECurveTampa = 5,
-    EGoal = 6,
-    ENone = -1
-  };
+class MeshingUtils {
 
 public:
   static REAL ElementDiameter(TPZGeoEl *gel);

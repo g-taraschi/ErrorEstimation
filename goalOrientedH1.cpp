@@ -1,26 +1,19 @@
+#include <iostream>
+#include <thread>
+
+// PZ includes
 #include "DarcyFlow/TPZDarcyFlow.h"
-#include "MeshingUtils.h"
-#include "DarcyFlow/TPZMixedDarcyFlow.h"
 #include "TPZAnalyticSolution.h"
-#include "TPZGeoMeshTools.h"
-#include "TPZGmshReader.h"
 #include "TPZLinearAnalysis.h"
-#include "TPZMultiphysicsCompMesh.h"
 #include "TPZNullMaterial.h"
-#include "TPZRefPatternDataBase.h"
 #include "TPZSSpStructMatrix.h"
 #include "TPZVTKGenerator.h"
 #include "TPZVTKGeoMesh.h"
-#include "pzintel.h"
 #include "pzlog.h"
-#include "pzmultiphysicselement.h"
-#include "TPZHDivApproxCreator.h"
-#include "pzcondensedcompel.h"
 #include "pzstepsolver.h"
-#include <filesystem>
-#include <iostream>
-#include <string>
-#include <thread>
+
+// Local includes
+#include "MeshingUtils.h"
 
 // ================
 // Global variables
@@ -37,16 +30,6 @@ REAL gperm = 1.0;
 // Tolerance for error visualization
 REAL gtol = 1e-3;
 REAL ptol = 0.5;
-
-// Material IDs for domain and boundaries
-enum EnumMatIds { 
-  EDomain = 1, 
-  EFarfield = 2, 
-  ECylinder = 3, 
-  ETampa = 4,
-  ECurveTampa = 5,
-  EGoal = 6,
-  ENone = -1 };
 
 // Forcing function for the dual problem
 auto ForcingFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result) {
