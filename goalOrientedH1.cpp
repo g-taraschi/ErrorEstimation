@@ -14,6 +14,7 @@
 
 // Local includes
 #include "MeshingUtils.h"
+#include "RefinementUtils.h"
 
 // ================
 // Global variables
@@ -29,7 +30,8 @@ REAL gperm = 1.0;
 
 // Tolerance for error visualization
 REAL gtol = 1e-3;
-REAL ptol = 0.5;
+REAL rtol = 0.5;
+bool shouldPlot = true;
 
 // Forcing function for the dual problem
 auto ForcingFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result) {
@@ -39,7 +41,7 @@ auto ForcingFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result) {
 
   result[0] = 0.;
   if (x >= 0.75 && x <= 0.875 && y >= 0.75 && y <= 0.875) {
-    result[0] = 1.;
+    result[0] = 1. * 0.015625; // Area of the square
   }
 };
 
@@ -54,7 +56,10 @@ TPZCompMesh *createCompMeshH1(TPZGeoMesh *gmesh, int order = 1);
 TPZCompMesh *createCompMeshH1Dual(TPZGeoMesh *gmesh, int order = 1);
 
 // Error estimation function for H1 solution using mixed solution as reference
-REAL GoalEstimation(TPZCompMesh* cmesh, TPZCompMesh* cmeshDual, int nthreads);
+REAL GoalEstimation(TPZCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZVec<int> &refinementIndicator, int nthreads);
+
+// Compute the error functional
+REAL ComputeFunctional(TPZCompMesh* cmesh, int gthreads);
 
 // =============
 // Main function
@@ -69,40 +74,48 @@ int main(int argc, char *const argv[]) {
   TPZLogger::InitializePZLOG("logpz.txt");
 #endif
 
-  gperm = 3.0;
-
   // --- Solve darcy problem ---
 
-  int h1_order = 1; // Polynomial order
-
-  // Set a problem with analytic solution
   gexact.fExact = TLaplaceExample1::ESinSin;
-  gexact.fDimension = 2;
+  int dim = 2;
+  gexact.fDimension = dim;
+  gperm = 1.0;
   gexact.fTensorPerm = {{gperm, 0., 0.}, {0., gperm, 0.}, {0., 0., gperm}};
 
   std::ofstream hrefFile("hrefTest.txt");
 
   // --- h-refinement loop ---
 
-  int iteration = 0;
-  int maxiter = 8;
+  int maxiter = 7;
   TPZVec<REAL> estimatedValues(maxiter);
-  TPZGeoMesh *gmesh = MeshingUtils::CreateGeoMesh2D({2, 2}, {0., 0.}, {1., 1.});
+  TPZVec<REAL> exactValues(maxiter);
+  TPZVec<int> numberDofs(maxiter);
+  TPZVec<int> refinementIndicator;
 
-  while (iteration < maxiter) {
+  int h1_order = 1; // Polynomial order
+
+  TPZGeoMesh *gmesh = nullptr;
+  if(dim == 2) {
+    gmesh = MeshingUtils::CreateGeoMesh2D({4, 4}, {0., 0.}, {1., 1.});
+  } else if (dim == 3) {
+    gmesh = MeshingUtils::CreateGeoMesh3D({4, 4, 4}, {0., 0., 0.}, {1., 1., 1.});
+  }
+
+  for (int iteration = 0; iteration < maxiter; iteration++) {
     TPZCompMesh *cmeshH1 = createCompMeshH1(gmesh, h1_order);
     TPZCompMesh *cmeshDual = createCompMeshH1Dual(gmesh, h1_order + 1);
 
-    // Mixed solver
+    // H1 solver
     TPZLinearAnalysis an(cmeshH1);
     TPZSSpStructMatrix<STATE> mat(cmeshH1);
     mat.SetNumThreads(gthreads);
     an.SetStructuralMatrix(mat);
-    TPZStepSolver<STATE> stepMixed;
-    stepMixed.SetDirect(ECholesky);
-    an.SetSolver(stepMixed);
+    TPZStepSolver<STATE> stepH1;
+    stepH1.SetDirect(ECholesky);
+    an.SetSolver(stepH1);
     an.Run();
     an.SetThreadsForError(gthreads);
+    numberDofs[iteration] = cmeshH1->NEquations();
 
     // Dual solver
     TPZLinearAnalysis anDual(cmeshDual);
@@ -117,37 +130,46 @@ int main(int argc, char *const argv[]) {
 
     // --- Plotting ---
 
-    {
-      const std::string plotfile = "h1_plot";
-      constexpr int vtkRes{0};
-      TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
-      auto vtk = TPZVTKGenerator(cmeshH1, fields, plotfile, vtkRes);
-      vtk.Do();
-    }
+    if (shouldPlot) {
+      {
+        const std::string plotfile = "h1_plot";
+        constexpr int vtkRes{0};
+        TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
+        auto vtk = TPZVTKGenerator(cmeshH1, fields, plotfile, vtkRes);
+        vtk.Do();
+      }
 
-    {
-      const std::string plotfile = "dual_plot";
-      constexpr int vtkRes{0};
-      TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
-      auto vtk = TPZVTKGenerator(cmeshDual, fields, plotfile, vtkRes);
-      vtk.Do();
+      {
+        const std::string plotfile = "dual_plot";
+        constexpr int vtkRes{0};
+        TPZManVector<std::string, 2> fields = {"Flux", "Pressure"};
+        auto vtk = TPZVTKGenerator(cmeshDual, fields, plotfile, vtkRes);
+        vtk.Do();
+      }
     }
 
     // --- Goal-oriented error estimation ---
 
-    REAL estimation = GoalEstimation(cmeshH1, cmeshDual, gthreads);
-    estimatedValues[iteration] = estimation;
+    estimatedValues[iteration] = GoalEstimation(cmeshH1, cmeshDual, refinementIndicator, gthreads);
+    exactValues[iteration] = ComputeFunctional(cmeshH1, gthreads);
+    std::cout << "Estimated value: " << estimatedValues[iteration] << ", Exact value: " << exactValues[iteration] << std::endl;
+
+    RefinementUtils::MeshSmoothing(gmesh, refinementIndicator);
+    RefinementUtils::AdaptiveRefinement(gmesh, refinementIndicator);
 
     // --- Clean up ---
 
     delete cmeshDual;
     delete cmeshH1;
-    iteration++;
   }
+
   // --- Output results ---
-  std::cout << "\nEstimated values:\n";
+  std::cout << "\nNumber of DoFs, Estimated values, Real Values, Eff. Index\n";
   for (int i = 0; i < estimatedValues.NElements(); i++) {
-    std::cout << estimatedValues[i] << "\n";
+  std::cout << numberDofs[i] << " & "
+        << std::scientific << std::setprecision(4) << estimatedValues[i] << " & "
+        << std::scientific << std::setprecision(4) << exactValues[i] << " & "
+        << std::fixed << std::setprecision(3) << estimatedValues[i] / exactValues[i] << "\n";
   }
 }
 
@@ -164,17 +186,17 @@ TPZCompMesh *createCompMeshH1(TPZGeoMesh *gmesh, int order) {
   // Add materials (weak formulation)
   TPZDarcyFlow *mat = new TPZDarcyFlow(EDomain, gmesh->Dimension());
   mat->SetConstantPermeability(gperm);
-  mat->SetForcingFunction(gexact.ForceFunc(), 8);
-  mat->SetExactSol(gexact.ExactSolution(), 8);
+  mat->SetForcingFunction(gexact.ForceFunc(), 6);
+  mat->SetExactSol(gexact.ExactSolution(), 6);
   cmesh->InsertMaterialObject(mat);
 
   // Add boundary conditions
   TPZManVector<REAL, 1> val2(1, 1.); // Part that goes to the RHS vector
   TPZFMatrix<REAL> val1(1, 1, 0.);   // Part that goes to the Stiffnes matrix
 
-  val2[0] = 1.0;
-  TPZBndCondT<REAL> *bcond = mat->CreateBC(mat, EFarfield, 0, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 8);
+  val2[0] = 0.0;
+  TPZBndCondT<REAL> *bcond = mat->CreateBC(mat, EBoundary, 0, val1, val2);
+  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
   cmesh->InsertMaterialObject(bcond);
 
   cmesh->AutoBuild();
@@ -191,7 +213,7 @@ TPZCompMesh *createCompMeshH1Dual(TPZGeoMesh *gmesh, int order) {
   // Add materials (weak formulation)
   TPZDarcyFlow *mat = new TPZDarcyFlow(EDomain, gmesh->Dimension());
   mat->SetConstantPermeability(gperm);
-  mat->SetForcingFunction(ForcingFunctionDual, 8);
+  mat->SetForcingFunction(ForcingFunctionDual, 6);
   cmesh->InsertMaterialObject(mat);
 
   // Add boundary conditions
@@ -199,7 +221,7 @@ TPZCompMesh *createCompMeshH1Dual(TPZGeoMesh *gmesh, int order) {
   TPZFMatrix<REAL> val1(1, 1, 0.);   // Part that goes to the Stiffnes matrix
 
   val2[0] = 0.0;
-  TPZBndCondT<REAL> *bcond = mat->CreateBC(mat, EFarfield, 0, val1, val2);
+  TPZBndCondT<REAL> *bcond = mat->CreateBC(mat, EBoundary, 0, val1, val2);
   cmesh->InsertMaterialObject(bcond);
 
   cmesh->AutoBuild();
@@ -207,13 +229,18 @@ TPZCompMesh *createCompMeshH1Dual(TPZGeoMesh *gmesh, int order) {
   return cmesh;
 }
 
-REAL GoalEstimation(TPZCompMesh* cmesh, TPZCompMesh* cmeshDual, int nthreads) {
+REAL GoalEstimation(TPZCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZVec<int> &refinementIndicator, int nthreads) {
 
   nthreads++; // If nthreads = 0, we use 1 thread
 
   // Ensure references point to dual cmesh
   cmeshDual->Reference()->ResetReference();
   cmeshDual->LoadReferences();
+
+  // Resizes refinementIndicator and fill with zeros
+  int64_t ngel = cmesh->Reference()->NElements();
+  refinementIndicator.Resize(ngel);
+  refinementIndicator.Fill(0);
 
   int64_t ncel = cmesh->NElements();
   TPZAdmChunkVector<TPZCompEl *> &elementvec_m = cmesh->ElementVec();
@@ -236,7 +263,6 @@ REAL GoalEstimation(TPZCompMesh* cmesh, TPZCompMesh* cmeshDual, int nthreads) {
       if (gel->HasSubElement()) continue;
       if (celDual->Material()->Id() != matid) DebugStop();
 
-      REAL hk = MeshingUtils::ElementDiameter(gel);
       REAL perm = gperm;
       REAL sqrtPerm = sqrt(perm);
 
@@ -290,8 +316,8 @@ REAL GoalEstimation(TPZCompMesh* cmesh, TPZCompMesh* cmeshDual, int nthreads) {
         goalError += (FTerm - FluxTerm) * weight;
       }
 
-      elementErrors[icel] = goalError;
-      localTotalError += elementErrors[icel];
+      elementErrors[icel] = std::abs(goalError);
+      localTotalError += goalError;
     }
     partialErrors[tid] = localTotalError;
   };
@@ -308,43 +334,88 @@ REAL GoalEstimation(TPZCompMesh* cmesh, TPZCompMesh* cmeshDual, int nthreads) {
   for (auto val : partialErrors) totalError += val;
 
   // VTK output
-  std::ofstream out_estimator("goalEstimation.vtk");
-  TPZVTKGeoMesh::PrintCMeshVTK(cmesh, out_estimator, elementErrors, "EstimatedError");
-
-  std::cout << "\nTotal estimated error: " << totalError << std::endl;
-
-  // h-refinement based on estimator
-  // REAL maxError = *std::max_element(elementErrors.begin(), elementErrors.end());
-  REAL maxError = *std::max_element(elementErrors.begin(), elementErrors.end(),
-    [](REAL a, REAL b) { return std::abs(a) < std::abs(b); });
-  TPZVec<int64_t> needRefinement;
-  for (int64_t i = 0; i < ncel; ++i) {
-    if (abs(elementErrors[i]) > ptol*maxError) {
-      TPZGeoEl *gel = elementvec_m[i]->Reference();
-      TPZVec<TPZGeoEl *> pv;
-      gel->Divide(pv);
-
-      // Refine boundary
-      int firstside = gel->FirstSide(2);
-      int lastside = gel->FirstSide(3);
-      for (int side = firstside; side < lastside; ++side) {
-        TPZGeoElSide gelSide(gel, side);
-        std::set<int> bcIds = {EFarfield};
-        TPZGeoElSide neigh = gelSide.HasNeighbour(bcIds);
-        if (neigh) {
-          TPZGeoEl *neighGel = neigh.Element();
-          if (neighGel->Dimension() != 2) DebugStop();
-          TPZVec<TPZGeoEl *> pv2;
-          neighGel->Divide(pv2);
-        }
-      }
-    }
+  if (shouldPlot) {
+    std::ofstream out_estimator("goalEstimation.vtk");
+    TPZVTKGeoMesh::PrintCMeshVTK(cmesh, out_estimator, elementErrors,
+                                 "EstimatedError");
   }
 
-  // Uniform refinement
-  // TPZCheckGeom checkgeom(cmeshMixed->Reference());
-  // checkgeom.UniformRefine(1);
+  // Mark elements for refinement
+  REAL maxError = *std::max_element(elementErrors.begin(), elementErrors.end());
+  for (int64_t i = 0; i < ncel; ++i) {
+    if (elementErrors[i] > rtol*maxError) {
+      int64_t igeo = cmesh->Element(i)->Reference()->Index();
+      refinementIndicator[igeo] = 1;
+    }
+  }
 
   return totalError;
 }
 
+REAL ComputeFunctional(TPZCompMesh* cmesh, int nthreads) {
+
+  nthreads++; // If nthreads = 0, we use 1 thread
+
+  int64_t ncel = cmesh->NElements();
+  TPZAdmChunkVector<TPZCompEl *> &elementvec_m = cmesh->ElementVec();
+
+  // Parallelization setup
+  std::vector<std::thread> threads(nthreads);
+  TPZManVector<REAL> threadContributions(nthreads, 0.0);
+
+  auto worker = [&](int tid, int64_t start, int64_t end) {
+    REAL threadContribution = 0.0;
+    for (int64_t icel = start; icel < end; ++icel) {
+      TPZCompEl *cel = elementvec_m[icel];
+      int matid = cel->Material()->Id();
+      if (matid != EDomain) continue;
+      TPZGeoEl *gel = cel->Reference();
+
+      REAL elementContribution = 0.0;
+
+      // Set integration rule
+      const TPZIntPoints* intrule = gel->CreateSideIntegrationRule(gel->NSides() - 1, 10);
+
+      for (int ip = 0; ip < intrule->NPoints(); ++ip) {
+        TPZManVector<REAL,3> ptInElement(gel->Dimension());
+        REAL weight, detjac;
+        intrule->Point(ip, ptInElement, weight);
+        TPZFNMatrix<9, REAL> jacobian, axes, jacinv;
+        gel->Jacobian(ptInElement, jacobian, axes, detjac, jacinv);
+        weight *= fabs(detjac);
+
+        TPZManVector<REAL, 3> x(3, 0.0);
+        gel->X(ptInElement, x); // Real coordinates for x
+
+        TPZVec<STATE> force(1);
+        ForcingFunctionDual(x, force);
+
+        // Compute solution ph
+        TPZManVector<REAL,1> ph(1,0.0);
+        cel->Solution(ptInElement, 1, ph);
+
+        // Compute exact solution pe
+        TPZVec<STATE> pe(1);
+        TPZFMatrix<REAL> dummyJac;
+        gexact.ExactSolution()(x, pe, dummyJac);
+
+        elementContribution += force[0]*(pe[0]-ph[0])*weight;
+      }
+      threadContribution += elementContribution;
+    }
+    threadContributions[tid] = threadContribution;
+  };
+
+  int64_t chunk = ncel/nthreads;
+  for (int t = 0; t < nthreads; ++t) {
+    int64_t start = t * chunk;
+    int64_t end = (t == nthreads - 1) ? ncel : (t + 1) * chunk;
+    threads[t] = std::thread(worker, t, start, end);
+  }
+  for (auto& th : threads) th.join();
+
+  REAL totalValue = 0.0;
+  for (auto val : threadContributions) totalValue += val;
+
+  return totalValue;
+}

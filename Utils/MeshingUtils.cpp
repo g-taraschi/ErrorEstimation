@@ -1,5 +1,5 @@
-#include "MeshingUtils.h"
 #include <filesystem>
+#include "MeshingUtils.h"
 #include "TPZGenGrid2D.h"
 #include "TPZGenGrid3D.h"
 
@@ -37,8 +37,8 @@ TPZGeoMesh* MeshingUtils::ReadGeoMesh(std::string file) {
     stringtoint[2]["surface_wellbore_cylinder"] = ECylinder;
     stringtoint[2]["surface_wellbore_heel"] = ECylinderBase;
     stringtoint[2]["surface_wellbore_toe"] = ECylinderBase;
-    stringtoint[2]["surface_farfield"] = EFarfield;
-    stringtoint[2]["surface_cap_rock"] = EFarfield;
+    stringtoint[2]["surface_farfield"] = EBoundary;
+    stringtoint[2]["surface_cap_rock"] = EBoundary;
 
     stringtoint[1]["curve_wellbore"] = ENone;
     stringtoint[1]["curve_heel"] = ENone;
@@ -83,6 +83,23 @@ TPZGeoMesh* MeshingUtils::CreateGeoMesh2D(const TPZManVector<int, 2> &nelDiv,
   generator.SetBC(gmesh, 5, EBoundary);
   generator.SetBC(gmesh, 6, EBoundary);
   generator.SetBC(gmesh, 7, EBoundary);
+
+  return gmesh;
+}
+
+TPZGeoMesh* MeshingUtils::CreateGeoMesh2D(const TPZManVector<int, 2> &nelDiv,
+                            const TPZManVector<REAL, 2> &minX,
+                            const TPZManVector<REAL, 2> &maxX,
+                            const TPZManVector<int, 5> &matIds) {
+
+  TPZGeoMesh *gmesh = new TPZGeoMesh;
+  TPZGenGrid2D generator(nelDiv, minX, maxX);
+  generator.SetElementType(MMeshType::EQuadrilateral);
+  generator.Read(gmesh, matIds[0]);
+  generator.SetBC(gmesh, 4, matIds[1]);
+  generator.SetBC(gmesh, 5, matIds[2]);
+  generator.SetBC(gmesh, 6, matIds[3]);
+  generator.SetBC(gmesh, 7, matIds[4]);
 
   return gmesh;
 }

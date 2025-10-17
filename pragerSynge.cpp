@@ -33,6 +33,9 @@ int gthreads = 18;
 // Exact solution
 TLaplaceExample1 gexact;
 
+// Define if we are using the mesh with a cylindrical cavity (3D)
+bool isCylinderMesh = false;
+
 // Permeability
 REAL gperm = 1.0;
 
@@ -56,7 +59,7 @@ REAL ErrorEstimation(TPZMultiphysicsCompMesh* cmeshMixed, TPZCompMesh* cmesh, TP
 void UniformRefinement(TPZGeoMesh *gmesh);
 
 // Perform adaptive refinement of the geometric mesh
-void AdaptiveRefinement(TPZGeoMesh *gmesh, TPZVec<REAL> refinementIndicator);
+void AdaptiveRefinement(TPZGeoMesh *gmesh, TPZVec<REAL>& refinementIndicator);
 
 // =============
 // Main function
@@ -76,11 +79,12 @@ int main(int argc, char *const argv[]) {
   int dim = 3;
   gperm = 1.0;
 
-  gexact.fExact = TLaplaceExample1::ESinSin;
+  gexact.fExact = TLaplaceExample1::ESphere;
   gexact.fDimension = dim;
   gexact.fTensorPerm = {{gperm, 0., 0.}, {0., gperm, 0.}, {0., 0., gperm}};
 
   bool shouldPlot = true; // Set to true for plotting the solutions
+  isCylinderMesh = true; // Set to true for cylindrical mesh in 3D
 
   // --- h-refinement loop ---
 
@@ -97,16 +101,19 @@ int main(int argc, char *const argv[]) {
    
     // Initial geometric mesh
     TPZGeoMesh *gmesh = nullptr;
-    if(dim == 2) {
+
+    if (dim == 3 && isCylinderMesh) {
+      gmesh = MeshingUtils::ReadGeoMesh("./Inputs/mesh3D.msh");
+    } else if(dim == 2) {
       gmesh = MeshingUtils::CreateGeoMesh2D({2, 2}, {0., 0.}, {1., 1.});
     } else if(dim == 3) {
       gmesh = MeshingUtils::CreateGeoMesh3D({2, 2, 2}, {0., 0., 0.}, {1., 1., 1.});
     }
 
-    for (int iteration = 0; iteration < 5; iteration++) {
+    for (int iteration = 0; iteration < 6; iteration++) {
       // H1 and mixed computational meshes
       TPZMultiphysicsCompMesh *cmeshMixed = createCompMeshMixed(gmesh, mixed_order, true);
-      TPZCompMesh *cmeshH1 = createCompMeshH1(gmesh, h1_order, true);
+      TPZCompMesh *cmeshH1 = createCompMeshH1(gmesh, h1_order, false);
 
       // Mixed solver
       TPZLinearAnalysis anMixed(cmeshMixed);
@@ -152,14 +159,12 @@ int main(int argc, char *const argv[]) {
 
       // --- Error Estimation ---
 
-      // TODO: Check if I'm picking the right error norms here
-
-      // Exact error for H1 solution || K^(1/2) grad(p-ph) ||_0
+      // Exact error for H1 solution
       TPZVec<REAL> errorsH1(3, 0.);
       anH1.PostProcessError(errorsH1, false, std::cout);
       REAL errorH1 = errorsH1[2];
 
-      // Exact error for mixed solution || -K^{-1/2} (sig - sigh) ||_0
+      // Exact error for mixed solution
       TPZVec<REAL> errorsMixed(5, 0.);
       anMixed.PostProcessError(errorsMixed, false, std::cout);
       REAL errorMixed = errorsMixed[1];
@@ -170,8 +175,8 @@ int main(int argc, char *const argv[]) {
       REAL PgSyGap = estimatedError*estimatedError - errorH1*errorH1 - errorMixed*errorMixed;
       
       // Refine the geometric mesh
-      UniformRefinement(gmesh);
-      // AdaptiveRefinement(gmesh, refinementIndicator);
+      // UniformRefinement(gmesh);
+      AdaptiveRefinement(gmesh, refinementIndicator);
 
       // Print results
       std::cout << "\nIteration " << iteration << ":\n"
@@ -210,17 +215,28 @@ TPZCompMesh *createCompMeshH1(TPZGeoMesh *gmesh, int order, bool isCondensed) {
   // Insert material
   TPZDarcyFlow *mat = new TPZDarcyFlow(EDomain, gmesh->Dimension());
   mat->SetConstantPermeability(gperm);
-  mat->SetForcingFunction(gexact.ForceFunc(), 4);
-  mat->SetExactSol(gexact.ExactSolution(), 4);
+  mat->SetForcingFunction(gexact.ForceFunc(), 6);
+  mat->SetExactSol(gexact.ExactSolution(), 6);
   h1Creator.InsertMaterialObject(mat);
 
   // Add boundary conditions
   TPZManVector<REAL, 1> val2(1, 1.);
   TPZFMatrix<REAL> val1(1, 1, 0.);
-  val2[0] = 1.0;
+  val2[0] = 0.0;
   TPZBndCondT<REAL> *bcond = mat->CreateBC(mat, EBoundary, 0, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
+  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
   h1Creator.InsertMaterialObject(bcond);
+
+  if (isCylinderMesh) {
+    val2[0] = 1.0;
+    bcond = mat->CreateBC(mat, ECylinder, 0, val1, val2);
+    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
+    h1Creator.InsertMaterialObject(bcond);
+
+    bcond = mat->CreateBC(mat, ECylinderBase, 0, val1, val2);
+    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
+    h1Creator.InsertMaterialObject(bcond);
+  }
 
   // Create the H1 computational mesh
   TPZCompMesh *cmesh = h1Creator.CreateClassicH1ApproximationSpace();
@@ -237,8 +253,8 @@ TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order, bool 
 
   TPZMixedDarcyFlow* matDarcy = new TPZMixedDarcyFlow(EDomain, gmesh->Dimension());
   matDarcy->SetConstantPermeability(gperm);
-  matDarcy->SetForcingFunction(gexact.ForceFunc(), 4);
-  matDarcy->SetExactSol(gexact.ExactSolution(), 4);
+  matDarcy->SetForcingFunction(gexact.ForceFunc(), 6);
+  matDarcy->SetExactSol(gexact.ExactSolution(), 6);
   hdivCreator->InsertMaterialObject(matDarcy);
 
   TPZFMatrix<STATE> val1(1, 1, 0.);
@@ -246,8 +262,18 @@ TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order, bool 
   
   val2[0] = 1.;
   TPZBndCondT<REAL> *bcond = matDarcy->CreateBC(matDarcy, EBoundary, 0, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
+  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
   hdivCreator->InsertMaterialObject(bcond);
+
+  if (isCylinderMesh) {
+    bcond = matDarcy->CreateBC(matDarcy, ECylinder, 0, val1, val2);
+    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
+    hdivCreator->InsertMaterialObject(bcond);
+
+    bcond = matDarcy->CreateBC(matDarcy, ECylinderBase, 0, val1, val2);
+    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
+    hdivCreator->InsertMaterialObject(bcond);
+  }
 
   TPZMultiphysicsCompMesh *cmesh = hdivCreator->CreateApproximationSpace();
   return cmesh;
@@ -321,6 +347,8 @@ REAL ErrorEstimation(TPZMultiphysicsCompMesh* cmeshMixed, TPZCompMesh* cmesh, TP
       } else {
         intrule = &intruleMixed;
       }
+
+      // intrule = gel->CreateSideIntegrationRule(gel->NSides() - 1, 20);
 
       for (int ip = 0; ip < intrule->NPoints(); ++ip) {
         TPZManVector<REAL,3> ptInElement(gel->Dimension());
@@ -397,7 +425,6 @@ REAL ErrorEstimation(TPZMultiphysicsCompMesh* cmeshMixed, TPZCompMesh* cmesh, TP
 
   std::cout << "\nTotal estimated error: " << totalError << std::endl;
 
-  // h-refinement based on estimator
   REAL maxError = *std::max_element(elementErrors.begin(), elementErrors.end());
   for (int64_t i = 0; i < ncel; ++i) {
     if (elementErrors[i] > rtol*maxError) {
@@ -415,6 +442,8 @@ void UniformRefinement(TPZGeoMesh *gmesh) {
 }
 
 void AdaptiveRefinement(TPZGeoMesh *gmesh, TPZVec<REAL>& refinementIndicator) {
+  int dim = gmesh->Dimension();
+
   for (int64_t iel = 0; iel < refinementIndicator.size(); ++iel) {
     if (refinementIndicator[iel] == 0) continue;
     TPZGeoEl *gel = gmesh->Element(iel);
@@ -424,15 +453,15 @@ void AdaptiveRefinement(TPZGeoMesh *gmesh, TPZVec<REAL>& refinementIndicator) {
     gel->Divide(pv);
 
     // Refine boundary
-    int firstside = gel->FirstSide(2);
-    int lastside = gel->FirstSide(3);
+    int firstside = gel->FirstSide(dim-1);
+    int lastside = gel->FirstSide(dim);
     for (int side = firstside; side < lastside; ++side) {
       TPZGeoElSide gelSide(gel, side);
-      std::set<int> bcIds = {EBoundary};
+      std::set<int> bcIds = {EBoundary, ECylinder, ECylinderBase};
       TPZGeoElSide neigh = gelSide.HasNeighbour(bcIds);
       if (neigh) {
         TPZGeoEl *neighGel = neigh.Element();
-        if (neighGel->Dimension() != gmesh->Dimension()-1) continue;
+        if (neighGel->Dimension() != dim-1) continue;
         TPZVec<TPZGeoEl *> pv2;
         neighGel->Divide(pv2);
       }
@@ -449,8 +478,8 @@ TPZCompMesh *createCompMeshH1Old(TPZGeoMesh *gmesh, int order) {
   // Add materials (weak formulation)
   TPZDarcyFlow *mat = new TPZDarcyFlow(EDomain, gmesh->Dimension());
   mat->SetConstantPermeability(gperm);
-  mat->SetForcingFunction(gexact.ForceFunc(), 4);
-  mat->SetExactSol(gexact.ExactSolution(), 4);
+  mat->SetForcingFunction(gexact.ForceFunc(), 6);
+  mat->SetExactSol(gexact.ExactSolution(), 6);
   cmesh->InsertMaterialObject(mat);
 
   // Add boundary conditions
@@ -459,7 +488,7 @@ TPZCompMesh *createCompMeshH1Old(TPZGeoMesh *gmesh, int order) {
 
   val2[0] = 1.0;
   TPZBndCondT<REAL> *bcond = mat->CreateBC(mat, EBoundary, 0, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
+  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
   cmesh->InsertMaterialObject(bcond);
 
   cmesh->AutoBuild();

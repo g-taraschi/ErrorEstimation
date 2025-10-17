@@ -1,3 +1,5 @@
+#pragma once
+
 #include <TPZCylinderMap.h>
 #include <TPZGeoMeshTools.h>
 #include <TPZGmshReader.h>
@@ -14,10 +16,9 @@
 enum EnumMatIds {
   EDomain = 1,
   EBoundary = 2,
-  EFarfield = 3,
-  ECylinder = 4,
-  ECylinderBase = 5,
-  EGoal = 6,
+  ECylinder = 3,
+  ECylinderBase = 4,
+  EGoal = 5,
   ENone = -1
 };
 
@@ -29,6 +30,11 @@ public:
   static TPZGeoMesh *CreateGeoMesh2D(const TPZManVector<int, 2> &nelDiv,
                                      const TPZManVector<REAL, 2> &minX,
                                      const TPZManVector<REAL, 2> &maxX);
+
+    static TPZGeoMesh *CreateGeoMesh2D(const TPZManVector<int, 2> &nelDiv,
+                                     const TPZManVector<REAL, 2> &minX,
+                                     const TPZManVector<REAL, 2> &maxX,
+                                     const TPZManVector<int, 5> &matIds);
 
   static TPZGeoMesh *CreateGeoMesh3D(const TPZManVector<int, 3> &nelDiv,
                                      const TPZManVector<REAL, 3> &minX,
