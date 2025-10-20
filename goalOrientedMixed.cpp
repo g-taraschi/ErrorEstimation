@@ -24,7 +24,7 @@
 // Global variables
 // ================
 
-int gthreads = 17;
+int gthreads = 18;
 bool shouldPlot = true;
 
 // Exact solution
@@ -36,7 +36,7 @@ REAL gperm = 1.0;
 
 // Tolerance for error visualization
 REAL gtol = 1e-3;
-REAL rtol = 0.8;
+REAL rtol = 0.5;
 
 // Forcing function for the dual problem
 auto DirichletFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result, TPZFMatrix<STATE> &deriv) {
@@ -130,7 +130,7 @@ int main(int argc, char *const argv[]) {
 
   // --- h-refinement loop ---
 
-  int maxit = 6;
+  int maxit = 4;
   int mixed_order = 1; // Polynomial order
   TPZVec<int> refinementIndicator;
   TPZVec<REAL> estimatedValues(maxit);
@@ -141,7 +141,7 @@ int main(int argc, char *const argv[]) {
   TPZGeoMesh *gmesh = nullptr;
   if (testCase == 1 || testCase == 2) {
     gmesh = MeshingUtils::CreateGeoMesh2D(
-      {4, 4, 4}, {0., 0., 0.}, {1., 1., 1.},
+      {4, 4}, {0., 0.}, {1., 1.},
       {EDomain, EBoundary, EBoundary, EBoundary, EGoal});
   }
   else if (testCase == 3) {
@@ -152,15 +152,15 @@ int main(int argc, char *const argv[]) {
   }
 
   for (int iteration = 0; iteration < maxit; iteration++) {
-    TPZMultiphysicsCompMesh *cmeshMixed = createCompMeshMixed(gmesh, mixed_order, false);
+    TPZMultiphysicsCompMesh *cmeshMixed = createCompMeshMixed(gmesh, mixed_order, true);
 
     TPZMultiphysicsCompMesh *cmeshDual = nullptr;
     if (testCase == 1) {
-      cmeshDual = createCompMeshMixedDual(gmesh, mixed_order + 1, false);
+      cmeshDual = createCompMeshMixedDual(gmesh, mixed_order + 1, true);
     } else if (testCase == 2) {
-      cmeshDual = createCompMeshMixedDualB(gmesh, mixed_order + 1, false);
+      cmeshDual = createCompMeshMixedDualB(gmesh, mixed_order + 1, true);
     } else if (testCase == 3) {
-      cmeshDual = createCompMeshMixedDual(gmesh, mixed_order + 1, false);
+      cmeshDual = createCompMeshMixedDual(gmesh, mixed_order + 1, true);
     } else {
       std::cerr << "Test case not implemented!" << std::endl;
       return -1;
@@ -224,9 +224,9 @@ int main(int argc, char *const argv[]) {
       return -1;
     }
 
-    RefinementUtils::MeshSmoothing(gmesh, refinementIndicator);
-    RefinementUtils::AdaptiveRefinement(gmesh, refinementIndicator);
-    // RefinementUtils::UniformRefinement(gmesh);
+    // RefinementUtils::MeshSmoothing(gmesh, refinementIndicator);
+    // RefinementUtils::AdaptiveRefinement(gmesh, refinementIndicator);
+    RefinementUtils::UniformRefinement(gmesh);
 
     // --- Clean up ---
 
@@ -275,11 +275,11 @@ TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order, bool 
 
   if (testCase == 3) {
     bcond = matDarcy->CreateBC(matDarcy, ECylinder, 0, val1, val2);
-    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
+    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
     hdivCreator->InsertMaterialObject(bcond);
 
     bcond = matDarcy->CreateBC(matDarcy, ECylinderBase, 0, val1, val2);
-    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
+    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
     hdivCreator->InsertMaterialObject(bcond);
   }
 
@@ -297,7 +297,7 @@ TPZMultiphysicsCompMesh *createCompMeshMixedDual(TPZGeoMesh *gmesh, int order, b
 
   TPZMixedDarcyFlow* matDarcy = new TPZMixedDarcyFlow(EDomain, gmesh->Dimension());
   matDarcy->SetConstantPermeability(gperm);
-  matDarcy->SetForcingFunction(ForcingFunctionDual, 6);
+  matDarcy->SetForcingFunction(ForcingFunctionDual, 4);
   hdivCreator->InsertMaterialObject(matDarcy);
 
   TPZFMatrix<STATE> val1(1, 1, 0.);
@@ -332,7 +332,7 @@ TPZMultiphysicsCompMesh *createCompMeshMixedDualB(TPZGeoMesh *gmesh, int order, 
   
   val2[0] = 1.;
   TPZBndCondT<REAL> *bcond = matDarcy->CreateBC(matDarcy, EGoal, 0, val1, val2);
-  bcond->SetForcingFunctionBC(DirichletFunctionDual, 6);
+  bcond->SetForcingFunctionBC(DirichletFunctionDual, 4);
   hdivCreator->InsertMaterialObject(bcond);
 
   val2[0] = 0.;
@@ -346,6 +346,7 @@ TPZMultiphysicsCompMesh *createCompMeshMixedDualB(TPZGeoMesh *gmesh, int order, 
 REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZVec<int> &refinementIndicator, int nthreads) {
 
   nthreads++; // If nthreads = 0, we use 1 thread
+  int dim = cmesh->Dimension();
 
   // Ensure references point to dual cmesh
   cmeshDual->Reference()->ResetReference();
@@ -450,7 +451,7 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZV
 
         // Flux contribution
         REAL FluxTerm = 0.0;
-        for (int d = 0; d < sigh.size(); ++d) {
+        for (int d = 0; d < dim; ++d) {
           FluxTerm += (1./perm)*sigh[d]*psih[d];
         }
 
@@ -460,10 +461,6 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZV
 
         goalError += (FTerm - FluxTerm - divTermA - divTermB) * weight;
       }
-
-      // Boundary contribution to FTerm
-      // int firstside = gel->NSides() - gel->Dimension() - 1;
-      // int lastside = gel->NSides() - 1;
 
       elementErrors[icel] = std::abs(goalError);
       localTotalError += goalError;
@@ -490,10 +487,6 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZV
   }
 
   // Mark elements for refinement
-  
-  // REAL maxError = *std::max_element(elementErrors.begin(), elementErrors.end(),
-  //   [](REAL a, REAL b) { return std::abs(a) < std::abs(b); });
-  // maxError = std::abs(maxError);
 
   REAL maxError = *std::max_element(elementErrors.begin(), elementErrors.end());
   for (int64_t i = 0; i < ncel; ++i) {

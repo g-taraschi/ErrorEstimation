@@ -20,7 +20,7 @@
 // Global variables
 // ================
 
-int gthreads = 0;
+int gthreads = 18;
 
 // Exact solution
 TLaplaceExample1 gexact;
@@ -41,7 +41,7 @@ auto ForcingFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result) {
 
   result[0] = 0.;
   if (x >= 0.75 && x <= 0.875 && y >= 0.75 && y <= 0.875) {
-    result[0] = 1. * 0.015625; // Area of the square
+    result[0] = 1. / 0.015625; // Area of the square
   }
 };
 
@@ -86,7 +86,7 @@ int main(int argc, char *const argv[]) {
 
   // --- h-refinement loop ---
 
-  int maxiter = 7;
+  int maxiter = 8;
   TPZVec<REAL> estimatedValues(maxiter);
   TPZVec<REAL> exactValues(maxiter);
   TPZVec<int> numberDofs(maxiter);
@@ -152,10 +152,10 @@ int main(int argc, char *const argv[]) {
 
     estimatedValues[iteration] = GoalEstimation(cmeshH1, cmeshDual, refinementIndicator, gthreads);
     exactValues[iteration] = ComputeFunctional(cmeshH1, gthreads);
-    std::cout << "Estimated value: " << estimatedValues[iteration] << ", Exact value: " << exactValues[iteration] << std::endl;
 
     RefinementUtils::MeshSmoothing(gmesh, refinementIndicator);
     RefinementUtils::AdaptiveRefinement(gmesh, refinementIndicator);
+    // RefinementUtils::UniformRefinement(gmesh);
 
     // --- Clean up ---
 
@@ -307,13 +307,13 @@ REAL GoalEstimation(TPZCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZVec<int> &ref
         // F contribution
         REAL FTerm = force[0]*zh[0];
 
-        // Flux contribution
-        REAL FluxTerm = 0.0;
+        // A contribution
+        REAL ATerm = 0.0;
         for (int d = 0; d < dph.size(); ++d) {
-          FluxTerm += (1./perm)*dph[d]*dzh[d];
+          ATerm += (1./perm)*dph[d]*dzh[d];
         }
 
-        goalError += (FTerm - FluxTerm) * weight;
+        goalError += (FTerm - ATerm) * weight;
       }
 
       elementErrors[icel] = std::abs(goalError);

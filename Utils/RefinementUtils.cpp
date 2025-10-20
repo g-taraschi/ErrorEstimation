@@ -35,31 +35,11 @@ void RefinementUtils::MeshSmoothing(TPZGeoMesh* gmesh, TPZVec<int>& refinementIn
     }  
   }
 
-  // If an element has a neighbor with refinement two levels higher, then refine it too
-  // for (int64_t iel = 0; iel < refinementIndicator.size(); ++iel) {
-  //   if (refinementIndicator[iel] != 1) continue;
-  //   TPZGeoEl* gel = gmesh->Element(iel);
-  //   if (!gel) DebugStop();
-  //   int matid = gel->MaterialId();
-  //   int firstside = gel->FirstSide(gel->Dimension()-1);
-  //   int lastside = gel->FirstSide(gel->Dimension());
-  //   for (int side = firstside; side < lastside; ++side) {
-  //     TPZGeoElSide gelSide(gel, side);
-  //     TPZGeoElSide lowerSide = gelSide.HasLowerLevelNeighbour(matid);
-  //     if (lowerSide) {
-  //       TPZGeoEl* neighGel = lowerSide.Element();
-  //       if (!neighGel->HasSubElement()) {
-  //         refinementIndicator[neighGel->Index()] = 1;
-  //         DebugStop();
-  //       }
-  //     }
-  //   }
-  // }
   for (int64_t iel = 0; iel < refinementIndicator.size(); ++iel) {
     if (refinementIndicator[iel] != 1) continue;
     TPZGeoEl* gel = gmesh->Element(iel);
 
-    // Get corner idexes of gel
+    // Get corner indexes of gel
     TPZManVector<int64_t> cornerIndexes(gel->NCornerNodes());
     for (int i = 0; i < gel->NCornerNodes(); ++i) {
       cornerIndexes[i] = gel->NodeIndex(i);
