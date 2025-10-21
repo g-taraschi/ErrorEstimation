@@ -29,7 +29,7 @@ bool shouldPlot = true;
 
 // Exact solution
 TLaplaceExample1 gexact;
-int testCase = 1;
+int testCase = 2;
 
 // Permeability
 REAL gperm = 1.0;
@@ -47,8 +47,8 @@ auto DirichletFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result, T
   REAL y = pt[1];
 
   result[0] = 0.;
-  if (x > -1e-6 && x < 1e-6 && y < 0.6 && y > 0.4) {
-    result[0] = 1.0/0.2; // Length of curve
+  if (x > -1e-6 && x < 1e-6 && y <= 0.5 && y >= 0.2) {
+    result[0] = 1.0/0.3; // Length of curve
   }
 
   // Dummy argument, not used in this application
@@ -65,7 +65,7 @@ auto ForcingFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result) {
 
   result[0] = 0.;
   if (x >= 0.75 && x <= 0.875 && y >= 0.75 && y <= 0.875) {
-    result[0] = 1. / 0.015625; // Area of the square
+    result[0] = 1. / 0.015625; // divide by area of the square
   }
 };
 
@@ -130,7 +130,7 @@ int main(int argc, char *const argv[]) {
 
   // --- h-refinement loop ---
 
-  int maxit = 4;
+  int maxit = 5;
   int mixed_order = 1; // Polynomial order
   TPZVec<int> refinementIndicator;
   TPZVec<REAL> estimatedValues(maxit);
@@ -141,7 +141,7 @@ int main(int argc, char *const argv[]) {
   TPZGeoMesh *gmesh = nullptr;
   if (testCase == 1 || testCase == 2) {
     gmesh = MeshingUtils::CreateGeoMesh2D(
-      {4, 4}, {0., 0.}, {1., 1.},
+      {8, 8}, {0., 0.}, {1., 1.},
       {EDomain, EBoundary, EBoundary, EBoundary, EGoal});
   }
   else if (testCase == 3) {
@@ -251,6 +251,7 @@ int main(int argc, char *const argv[]) {
 TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order, bool isCondensed) {
   TPZHDivApproxCreator *hdivCreator = new TPZHDivApproxCreator(gmesh);
   hdivCreator->HdivFamily() = HDivFamily::EHDivStandard;
+  // hdivCreator->HdivFamily() = HDivFamily::EHDivConstant;
   hdivCreator->ProbType() = ProblemType::EDarcy;
   hdivCreator->SetDefaultOrder(order);
   hdivCreator->SetShouldCondense(isCondensed);
@@ -290,6 +291,7 @@ TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order, bool 
 TPZMultiphysicsCompMesh *createCompMeshMixedDual(TPZGeoMesh *gmesh, int order, bool isCondensed) {
   TPZHDivApproxCreator *hdivCreator = new TPZHDivApproxCreator(gmesh);
   hdivCreator->HdivFamily() = HDivFamily::EHDivStandard;
+  // hdivCreator->HdivFamily() = HDivFamily::EHDivConstant;
   hdivCreator->ProbType() = ProblemType::EDarcy;
   hdivCreator->SetDefaultOrder(order);
   hdivCreator->SetShouldCondense(isCondensed);
@@ -417,7 +419,7 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZV
         intrule->Point(ip, ptInElement, weight);
         TPZFNMatrix<9, REAL> jacobian, axes, jacinv;
         gel->Jacobian(ptInElement, jacobian, axes, detjac, jacinv);
-        weight *= fabs(detjac);
+        weight *= detjac; // fabs(detjac);
 
         TPZManVector<REAL, 3> x(3, 0.0);
         gel->X(ptInElement, x); // Real coordinates for x
@@ -441,8 +443,9 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZV
         celDual->Solution(ptInElement, 1, psih);
         celDual->Solution(ptInElement, 5, divpsih);
 
-        // Invert the sign of dual solution
-        for (auto &val : zh) val *= -1.0;
+        // Invert the sign of psih dual solution
+        // this is done because of how the dual problem is defined
+        // for (auto &val : zh) val *= -1.0;
         for (auto &val : psih) val *= -1.0;
         for (auto &val : divpsih) val *= -1.0;
 
