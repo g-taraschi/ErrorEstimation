@@ -114,7 +114,7 @@ int main(int argc, char *const argv[]) {
 
   int dim;
   if (testCase == 1 || testCase == 2) {
-    gexact.fExact = TLaplaceExample1::ESinSin;
+    gexact.fExact = TLaplaceExample1::ECosCos;
     dim = 2;
   }
   else if (testCase == 3) {
@@ -141,7 +141,7 @@ int main(int argc, char *const argv[]) {
   TPZGeoMesh *gmesh = nullptr;
   if (testCase == 1 || testCase == 2) {
     gmesh = MeshingUtils::CreateGeoMesh2D(
-      {8, 8}, {0., 0.}, {1., 1.},
+      {4, 4}, {0., 0.}, {1., 1.},
       {EDomain, EBoundary, EBoundary, EBoundary, EGoal});
   }
   else if (testCase == 3) {
@@ -251,7 +251,6 @@ int main(int argc, char *const argv[]) {
 TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order, bool isCondensed) {
   TPZHDivApproxCreator *hdivCreator = new TPZHDivApproxCreator(gmesh);
   hdivCreator->HdivFamily() = HDivFamily::EHDivStandard;
-  // hdivCreator->HdivFamily() = HDivFamily::EHDivConstant;
   hdivCreator->ProbType() = ProblemType::EDarcy;
   hdivCreator->SetDefaultOrder(order);
   hdivCreator->SetShouldCondense(isCondensed);
@@ -259,28 +258,28 @@ TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order, bool 
 
   TPZMixedDarcyFlow* matDarcy = new TPZMixedDarcyFlow(EDomain, gmesh->Dimension());
   matDarcy->SetConstantPermeability(gperm);
-  matDarcy->SetForcingFunction(gexact.ForceFunc(), 4);
-  matDarcy->SetExactSol(gexact.ExactSolution(), 4);
+  matDarcy->SetForcingFunction(gexact.ForceFunc(), 6);
+  matDarcy->SetExactSol(gexact.ExactSolution(), 6);
   hdivCreator->InsertMaterialObject(matDarcy);
 
   TPZFMatrix<STATE> val1(1, 1, 0.);
   TPZManVector<STATE> val2(1, 1.);
   
   TPZBndCondT<REAL> *bcond = matDarcy->CreateBC(matDarcy, EBoundary, 0, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
+  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
   hdivCreator->InsertMaterialObject(bcond);
 
   bcond = matDarcy->CreateBC(matDarcy, EGoal, 0, val1, val2);
-  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
+  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
   hdivCreator->InsertMaterialObject(bcond);
 
   if (testCase == 3) {
     bcond = matDarcy->CreateBC(matDarcy, ECylinder, 0, val1, val2);
-    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
+    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
     hdivCreator->InsertMaterialObject(bcond);
 
     bcond = matDarcy->CreateBC(matDarcy, ECylinderBase, 0, val1, val2);
-    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 4);
+    bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
     hdivCreator->InsertMaterialObject(bcond);
   }
 
@@ -291,7 +290,6 @@ TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order, bool 
 TPZMultiphysicsCompMesh *createCompMeshMixedDual(TPZGeoMesh *gmesh, int order, bool isCondensed) {
   TPZHDivApproxCreator *hdivCreator = new TPZHDivApproxCreator(gmesh);
   hdivCreator->HdivFamily() = HDivFamily::EHDivStandard;
-  // hdivCreator->HdivFamily() = HDivFamily::EHDivConstant;
   hdivCreator->ProbType() = ProblemType::EDarcy;
   hdivCreator->SetDefaultOrder(order);
   hdivCreator->SetShouldCondense(isCondensed);
@@ -299,7 +297,7 @@ TPZMultiphysicsCompMesh *createCompMeshMixedDual(TPZGeoMesh *gmesh, int order, b
 
   TPZMixedDarcyFlow* matDarcy = new TPZMixedDarcyFlow(EDomain, gmesh->Dimension());
   matDarcy->SetConstantPermeability(gperm);
-  matDarcy->SetForcingFunction(ForcingFunctionDual, 4);
+  matDarcy->SetForcingFunction(ForcingFunctionDual, 6);
   hdivCreator->InsertMaterialObject(matDarcy);
 
   TPZFMatrix<STATE> val1(1, 1, 0.);
@@ -405,13 +403,15 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZV
 
       // Set integration rule
       const TPZIntPoints* intrule = nullptr;
-      const TPZIntPoints &intruleMixed = celMixed->GetIntegrationRule();
-      const TPZIntPoints &intruleDual = celDual->GetIntegrationRule();
-      if (intruleMixed.NPoints() < intruleDual.NPoints()) {
-        intrule = &intruleDual;
-      } else {
-        intrule = &intruleMixed;
-      }
+      intrule = gel->CreateSideIntegrationRule(gel->NSides() - 1, 20);
+
+      // const TPZIntPoints &intruleMixed = celMixed->GetIntegrationRule();
+      // const TPZIntPoints &intruleDual = celDual->GetIntegrationRule();
+      // if (intruleMixed.NPoints() < intruleDual.NPoints()) {
+      //   intrule = &intruleDual;
+      // } else {
+      //   intrule = &intruleMixed;
+      // }
 
       for (int ip = 0; ip < intrule->NPoints(); ++ip) {
         TPZManVector<REAL,3> ptInElement(gel->Dimension());
@@ -443,14 +443,8 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZV
         celDual->Solution(ptInElement, 1, psih);
         celDual->Solution(ptInElement, 5, divpsih);
 
-        // Invert the sign of psih dual solution
-        // this is done because of how the dual problem is defined
-        // for (auto &val : zh) val *= -1.0;
-        for (auto &val : psih) val *= -1.0;
-        for (auto &val : divpsih) val *= -1.0;
-
         // F contribution
-        REAL FTerm = force[0]*zh[0];
+        REAL FTerm = -force[0]*zh[0];
 
         // Flux contribution
         REAL FluxTerm = 0.0;
@@ -459,10 +453,58 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZV
         }
 
         // div contributions
-        REAL divTermA = divsigh[0]*zh[0];
+        REAL divTermA = -divsigh[0]*zh[0];
         REAL divTermB = -divpsih[0]*ph[0];
 
-        goalError += (FTerm - FluxTerm - divTermA - divTermB) * weight;
+        // Minus sign due to the definition of the dual problem
+        goalError -= (FTerm - FluxTerm - divTermA - divTermB) * weight;
+      }
+
+      // Boundary contributions
+      int firstSide = gel->FirstSide(dim-1);
+      int lastSide = gel->FirstSide(dim);
+
+      for (int side = firstSide; side < lastSide; ++side) {
+        TPZGeoElSide gelSide(gel, side);
+        std::set<int> bcIds = {EBoundary, EGoal};
+        TPZGeoElSide neigh = gelSide.HasNeighbour(bcIds);
+        if (neigh) {
+          TPZGeoEl *gelB = neigh.Element();
+          TPZCompEl *celDualB = gelB->Reference();
+          if (gelB->HasSubElement()) DebugStop();
+
+          // Check if element is condensed
+          TPZCondensedCompEl *condEl = dynamic_cast<TPZCondensedCompEl *>(celDualB);
+          if (condEl) {
+            // If compel is condensed, load solution on the unconsensed compel
+            condEl->LoadSolution();
+            celDualB = condEl->ReferenceCompEl();
+          }
+
+          TPZIntPoints* intruleSide = gelB->CreateSideIntegrationRule(gelB->NSides() - 1, 10);
+          for (int ip = 0; ip < intruleSide->NPoints(); ++ip) {
+            TPZManVector<REAL,3> ptInElement(gelB->Dimension());
+            REAL weight, detjac;
+            intruleSide->Point(ip, ptInElement, weight);
+            TPZFNMatrix<9, REAL> jacobian, axes, jacinv;
+            gelB->Jacobian(ptInElement, jacobian, axes, detjac, jacinv);
+            weight *= detjac;
+
+            TPZManVector<REAL, 3> x(3, 0.0);
+            gelB->X(ptInElement, x); // Real coordinates for x
+
+            // Compute dual solution psih
+            TPZManVector<REAL, 3> psih(1, 0.0);
+            celDualB->Solution(ptInElement, 18, psih);
+
+            // Compute exact solution pe
+            TPZVec<STATE> pe(1);
+            TPZFMatrix<REAL> dummyJac;
+            gexact.ExactSolution()(x, pe, dummyJac);
+
+            goalError += pe[0]*psih[0]*weight;
+          }
+        }
       }
 
       elementErrors[icel] = std::abs(goalError);
@@ -532,7 +574,7 @@ REAL ComputeFunctional(TPZCompMesh* cmesh, int nthreads) {
       REAL elementContribution = 0.0;
 
       // Set integration rule
-      const TPZIntPoints* intrule = gel->CreateSideIntegrationRule(gel->NSides() - 1, 10);
+      const TPZIntPoints* intrule = gel->CreateSideIntegrationRule(gel->NSides() - 1, 20);
 
       for (int ip = 0; ip < intrule->NPoints(); ++ip) {
         TPZManVector<REAL,3> ptInElement(gel->Dimension());
@@ -603,13 +645,14 @@ REAL ComputeFunctionalB(TPZCompMesh* cmesh, int nthreads) {
       }
 
       int matid = cel->Material()->Id();
-      if (matid != EGoal) continue;
       TPZGeoEl *gel = cel->Reference();
+      if (matid != EGoal) continue;
+      if (gel->HasSubElement()) continue;
 
       REAL elementContribution = 0.0;
 
       // Set integration rule
-      const TPZIntPoints* intrule = gel->CreateSideIntegrationRule(gel->NSides() - 1, 10);
+      const TPZIntPoints* intrule = gel->CreateSideIntegrationRule(gel->NSides() - 1, 20);
 
       for (int ip = 0; ip < intrule->NPoints(); ++ip) {
         TPZManVector<REAL,3> ptInElement(gel->Dimension());

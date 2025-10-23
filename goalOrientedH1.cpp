@@ -86,7 +86,7 @@ int main(int argc, char *const argv[]) {
 
   // --- h-refinement loop ---
 
-  int maxiter = 5;
+  int maxiter = 4;
   TPZVec<REAL> estimatedValues(maxiter);
   TPZVec<REAL> exactValues(maxiter);
   TPZVec<int> numberDofs(maxiter);
@@ -153,9 +153,9 @@ int main(int argc, char *const argv[]) {
     estimatedValues[iteration] = GoalEstimation(cmeshH1, cmeshDual, refinementIndicator, gthreads);
     exactValues[iteration] = ComputeFunctional(cmeshH1, gthreads);
 
-    // RefinementUtils::MeshSmoothing(gmesh, refinementIndicator);
-    // RefinementUtils::AdaptiveRefinement(gmesh, refinementIndicator);
-    RefinementUtils::UniformRefinement(gmesh);
+    RefinementUtils::MeshSmoothing(gmesh, refinementIndicator);
+    RefinementUtils::AdaptiveRefinement(gmesh, refinementIndicator);
+    // RefinementUtils::UniformRefinement(gmesh);
 
     // --- Clean up ---
 
