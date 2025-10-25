@@ -27,7 +27,7 @@ TPZGeoMesh* MeshingUtils::ReadGeoMesh(std::string file) {
 
   std::string currentPath = std::filesystem::current_path();
   std::string fatherPath = std::filesystem::path(currentPath).parent_path();
-  std::string path(fatherPath + "/" + file);
+  std::string path(fatherPath + "/Inputs/" + file);
   TPZGeoMesh *gmesh = new TPZGeoMesh();
   {
     TPZGmshReader reader;

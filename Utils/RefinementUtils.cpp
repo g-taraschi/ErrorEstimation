@@ -9,14 +9,19 @@ void RefinementUtils::MeshSmoothing(TPZGeoMesh* gmesh, TPZVec<int>& refinementIn
     if (refinementIndicator[iel] != 1) continue;
     TPZGeoEl* gel = gmesh->Element(iel);
     if (!gel) DebugStop();
-    int firstside = gel->FirstSide(gel->Dimension()-1);
-    int lastside = gel->FirstSide(gel->Dimension());
+
+    int dim = gel->Dimension();
+    int threshold = 4;
+    if (dim == 1) threshold = 1;
+    if (dim == 3) threshold = 5;
+
+    int firstside = gel->FirstSide(dim-1);
+    int lastside = gel->FirstSide(dim);
     for (int side = firstside; side < lastside; ++side) {
       TPZGeoElSide gelSide(gel, side);
       TPZGeoElSide neigh = gelSide.Neighbour();
       TPZGeoEl* neighGel = neigh.Element();
       if (!neighGel) DebugStop();
-      int threshold = 4;
       int neighIndex = neighGel->Index();
       if (refinementIndicator[neighIndex] == 1) continue;
       int firstsideNeigh = neighGel->FirstSide(neighGel->Dimension()-1);
