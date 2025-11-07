@@ -13,4 +13,6 @@ public:
   static void MeshSmoothing(TPZGeoMesh *gmesh, TPZVec<int> &refinementIndicator);
 
   static void AdaptiveRefinement(TPZGeoMesh *gmesh, TPZVec<int> &refinementIndicator);
+
+  static void ConvergenceOrder(TPZFMatrix<REAL> &errors, TPZVec<REAL> &hs);
 };

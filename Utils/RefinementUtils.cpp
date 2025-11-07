@@ -115,3 +115,45 @@ void RefinementUtils::AdaptiveRefinement(TPZGeoMesh *gmesh, TPZVec<int>& refinem
     }
   }
 }
+
+void RefinementUtils::ConvergenceOrder(TPZFMatrix<REAL> &errors, TPZVec<REAL> &hs) {
+  int nexp = errors.Rows();
+  int nerrors = errors.Cols();
+  TPZFMatrix<REAL> orders(nexp, nerrors);
+
+  if (nexp < 2) {
+    PZError << "RefinementUtils::ConvergenceOrder requires at least two rows to compute convergence order.\n";
+    DebugStop();
+  }
+
+  if (hs.size() != nexp) {
+    PZError << "RefinementUtils::ConvergenceOrder requires hs vector of size number of experiments.\n";
+    DebugStop();
+  }
+
+  for (int j = 0; j < nerrors; ++j) {
+    orders(0,j) = 0.0; // No order for first entry
+    for (int i = 1; i < nexp; ++i) {
+      REAL h1 = hs[i-1];
+      REAL h2 = hs[i];
+      REAL e1 = errors.Get(i-1,j);
+      REAL e2 = errors.Get(i,j);
+      if (h2 >= h1) {
+        PZError << "RefinementUtils::ConvergenceOrder requires strictly decreasing hs.\n";
+        DebugStop();
+      }
+
+      REAL order = log(e1/e2)/log(h1/h2);
+      orders(i,j) = order;
+    }
+  }
+
+  std::cout << "\nConvergence Orders:\n";
+  for (int i = 0; i < nexp; ++i) {
+    for (int j = 0; j < nerrors; ++j) {
+      std::cout << std::scientific << std::setprecision(3) << errors.Get(i,j) << " & ";
+      std::cout << std::fixed << std::setprecision(2) << orders.Get(i,j) << " & ";
+    }
+    std::cout << std::endl;
+  }
+}
