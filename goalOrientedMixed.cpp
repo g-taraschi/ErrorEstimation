@@ -25,7 +25,7 @@
 // Global variables
 // ================
 
-int gthreads = 18;
+int gthreads = 0;
 bool shouldPlot = true;
 
 // Exact solution
