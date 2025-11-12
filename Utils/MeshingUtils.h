@@ -19,6 +19,8 @@ enum EnumMatIds {
   ECylinder = 3,
   ECylinderBase = 4,
   EGoal = 5,
+  EDirichlet = 6,
+  ENeumann = 7,
   ENone = -1
 };
 

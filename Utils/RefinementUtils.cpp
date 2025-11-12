@@ -104,7 +104,7 @@ void RefinementUtils::AdaptiveRefinement(TPZGeoMesh *gmesh, TPZVec<int>& refinem
     int lastside = gel->FirstSide(dim);
     for (int side = firstside; side < lastside; ++side) {
       TPZGeoElSide gelSide(gel, side);
-      std::set<int> bcIds = {EBoundary, EGoal, ECylinder, ECylinderBase};
+      std::set<int> bcIds = {EDirichlet};
       TPZGeoElSide neigh = gelSide.HasNeighbour(bcIds);
       if (neigh) {
         TPZGeoEl *neighGel = neigh.Element();
