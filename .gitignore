@@ -1,6 +1,9 @@
 # Ignore local build directories for ErrorEstimation
 build/
 
+# Ignore figures folder
+figures/
+
 # CMake generated files
 CMakeFiles/
 CMakeCache.txt
