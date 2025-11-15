@@ -46,17 +46,7 @@ auto DirichletFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result, T
   REAL x = pt[0];
   REAL y = pt[1];
 
-  result[0] = 0.; // Tests 1 and 2
-
-  // Test 3
-  // if (x > -1e-8 && x < 1e-8 && y <= 0.5 && y >= 0.2) {
-  //   result[0] = 1.0/0.3; // Length of curve
-  // }
-
-  // Test 4
-  // if (x <= 0.25 && y <= 0.25) {
-  //   result[0] = 1.0 - 4.0 * (x + y);
-  // }
+  result[0] = 1.;
 
   // Dummy argument, not used in this application
   deriv(0, 0) = 0.0; // du/dx
@@ -70,15 +60,7 @@ auto ForcingFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result) {
   REAL x = pt[0];
   REAL y = pt[1];
 
-  result[0] = 0.; // Test 3 and 4
-
-  // Test 1
-  // result[0] = pow(x,10)*pow(y,10);
-
-  // Test 2
-  if (x >= 0.75 && x <= 0.875 && y >= 0.75 && y <= 0.875) {
-    result[0] = 1. / 0.015625; // divide by area of the square
-  }
+  result[0] = 0.;
 };
 
 // ===================
@@ -112,13 +94,13 @@ int main(int argc, char *const argv[]) {
 
   // --- Solve darcy problem ---
 
-  gexact.fExact = TLaplaceExample1::ESquareRoot;
+  gexact.fExact = TLaplaceExample1::ESphere;
   gperm = 1.0;
   gexact.fTensorPerm = {{gperm, 0., 0.}, {0., gperm, 0.}, {0., 0., gperm}};
 
   // --- h-refinement loop ---
 
-  int maxit = 8;
+  int maxit = 3;
   int mixed_order = 1; // Polynomial order
   TPZVec<int> refinementIndicator;
   TPZVec<REAL> estimatedValues(maxit);
@@ -129,9 +111,7 @@ int main(int argc, char *const argv[]) {
   TPZVec<REAL> hs(maxit);
 
   // Initial mesh
-  TPZGeoMesh *gmesh = MeshingUtils::CreateGeoMesh2D(
-      {4, 4}, {0., 0.}, {1., 1.},
-      {EDomain, EDirichlet, EDirichlet, EDirichlet, EDirichlet});
+  TPZGeoMesh *gmesh = MeshingUtils::ReadGeoMesh("mesh3D.msh");
 
   for (int iteration = 0; iteration < maxit; iteration++) {
     TPZMultiphysicsCompMesh *cmeshMixed = createCompMeshMixed(gmesh, mixed_order, true);
@@ -231,7 +211,7 @@ int main(int argc, char *const argv[]) {
         << std::fixed << std::setprecision(3) << estimatedValues[i] / exactValues[i] << "\n";
   }
 
-  RefinementUtils::ConvergenceOrder(errors, hs);
+  // RefinementUtils::ConvergenceOrder(errors, hs);
 
 }
 
@@ -255,9 +235,16 @@ TPZMultiphysicsCompMesh *createCompMeshMixed(TPZGeoMesh *gmesh, int order, bool 
 
   TPZFMatrix<STATE> val1(1, 1, 0.);
   TPZManVector<STATE> val2(1, 1.);
-  
-  val2[0] = 0.;
+
   TPZBndCondT<REAL> *bcond = matDarcy->CreateBC(matDarcy, EDirichlet, 0, val1, val2);
+  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
+  hdivCreator->InsertMaterialObject(bcond);
+
+  bcond = matDarcy->CreateBC(matDarcy, ECylinder, 0, val1, val2);
+  bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
+  hdivCreator->InsertMaterialObject(bcond);
+
+  bcond = matDarcy->CreateBC(matDarcy, ECylinderBase, 0, val1, val2);
   bcond->SetForcingFunctionBC(gexact.ExactSolution(), 6);
   hdivCreator->InsertMaterialObject(bcond);
 
@@ -283,6 +270,15 @@ TPZMultiphysicsCompMesh *createCompMeshMixedDual(TPZGeoMesh *gmesh, int order, b
   
   val2[0] = 0.;
   TPZBndCondT<REAL> *bcond = matDarcy->CreateBC(matDarcy, EDirichlet, 0, val1, val2);
+  hdivCreator->InsertMaterialObject(bcond);
+
+  val2[0] = 1.;
+  bcond = matDarcy->CreateBC(matDarcy, ECylinder, 0, val1, val2);
+  bcond->SetForcingFunctionBC(DirichletFunctionDual, 6);
+  hdivCreator->InsertMaterialObject(bcond);
+
+  val2[0] = 1.;
+  bcond = matDarcy->CreateBC(matDarcy, ECylinderBase, 0, val1, val2);
   bcond->SetForcingFunctionBC(DirichletFunctionDual, 6);
   hdivCreator->InsertMaterialObject(bcond);
 
@@ -413,7 +409,7 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZV
 
       for (int side = firstSide; side < lastSide; ++side) {
         TPZGeoElSide gelSide(gel, side);
-        std::set<int> bcIds = {EDirichlet};
+        std::set<int> bcIds = {EDirichlet, ECylinder, ECylinderBase};
         TPZGeoElSide neigh = gelSide.HasNeighbour(bcIds);
         if (neigh) {
           TPZGeoEl *gelB = neigh.Element();
@@ -442,7 +438,7 @@ REAL GoalEstimation(TPZMultiphysicsCompMesh* cmesh, TPZCompMesh* cmeshDual, TPZV
 
             // Compute dual solution psih
             TPZManVector<REAL, 3> psih(1, 0.0);
-            celDualB->Solution(ptInElement, 18, psih);
+            celDualB->Solution(ptInElement, 18, psih); // FIXME
 
             // Compute exact solution pe
             TPZVec<STATE> pe(1);
@@ -577,7 +573,7 @@ REAL ComputeFunctional(TPZCompMesh *cmesh, int nthreads) {
         }
 
       // Boundary part
-      } else if (matid == EDirichlet) {
+      } else if (matid == ECylinder || matid == ECylinderBase) {
         // Get the normal vector
         TPZManVector<REAL, 3> qsi(gel->Dimension());
         gel->CenterPoint(gel->NSides() - 1, qsi);
@@ -586,10 +582,18 @@ REAL ComputeFunctional(TPZCompMesh *cmesh, int nthreads) {
         REAL detjac;
         gel->Jacobian(qsi, jac, axes, detjac, jacinv);
 
-        TPZManVector<REAL, 3> normal(3);
-        normal[0] = axes(0,1);
-        normal[1] = -axes(0,0);
-        normal[2] = 0.0;
+        TPZManVector<REAL, 3> v1(3), v2(3), normal(3);
+        v1[0] = axes(0, 0);
+        v1[1] = axes(0, 1);
+        v1[2] = axes(0, 2);
+        v2[0] = axes(1, 0);
+        v2[1] = axes(1, 1);
+        v2[2] = axes(1, 2);
+
+        // Cross product v1 x v2
+        normal[0] = v1[1] * v2[2] - v1[2] * v2[1];
+        normal[1] = v1[2] * v2[0] - v1[0] * v2[2];
+        normal[2] = v1[0] * v2[1] - v1[1] * v2[0];
 
         // Normalize
         REAL norm = sqrt(normal[0] * normal[0] + normal[1] * normal[1] +
@@ -629,7 +633,6 @@ REAL ComputeFunctional(TPZCompMesh *cmesh, int nthreads) {
 
           // Multiply sige by normal
           REAL fluxe = sige(0, 0) * normal[0] + sige(1, 0) * normal[1] + sige(2, 0) * normal[2];
-          //REAL fluxe = -sige(0,0);
 
           elementContribution += force[0] * (fluxe - fluxh[0]) * weight;
         }

@@ -37,8 +37,8 @@ TPZGeoMesh* MeshingUtils::ReadGeoMesh(std::string file) {
     stringtoint[2]["surface_wellbore_cylinder"] = ECylinder;
     stringtoint[2]["surface_wellbore_heel"] = ECylinderBase;
     stringtoint[2]["surface_wellbore_toe"] = ECylinderBase;
-    stringtoint[2]["surface_farfield"] = EBoundary;
-    stringtoint[2]["surface_cap_rock"] = EBoundary;
+    stringtoint[2]["surface_farfield"] = EDirichlet;
+    stringtoint[2]["surface_cap_rock"] = EDirichlet;
 
     stringtoint[1]["curve_wellbore"] = ENone;
     stringtoint[1]["curve_heel"] = ENone;
