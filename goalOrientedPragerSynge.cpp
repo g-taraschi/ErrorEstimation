@@ -74,7 +74,7 @@ auto ForcingFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result) {
   result[0] = 0.; // Test 3 and 4
 
   // Test 1
-  // result[0] = pow(x,10)*pow(y,10);
+  result[0] = pow(x,10)*pow(y,10);
 
   // Test 2
   // if (x >= 0.75 && x <= 0.875 && y >= 0.75 && y <= 0.875) {
@@ -82,7 +82,7 @@ auto ForcingFunctionDual = [](const TPZVec<REAL> &pt, TPZVec<STATE> &result) {
   // }
 
   // Test 5
-  result[0] = 2.0*M_PI*M_PI*sin(M_PI*x)*sin(M_PI*y);
+  // result[0] = 2.0*M_PI*M_PI*sin(M_PI*x)*sin(M_PI*y);
 };
 
 // ===================

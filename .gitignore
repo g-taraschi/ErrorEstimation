@@ -2,7 +2,10 @@
 build/
 
 # Ignore figures folder
-figures/
+Figures/
+
+# Python cache files
+Python/__pycache__/
 
 # CMake generated files
 CMakeFiles/
@@ -28,6 +31,10 @@ compile_commands.json
 # Logs and temporary files
 *.log
 *.tmp
+
+# Figures
+*.png
+*.vtk
 
 # MacOS
 .DS_Store

@@ -83,14 +83,35 @@ void RefinementUtils::MeshSmoothing(TPZGeoMesh* gmesh, TPZVec<int>& refinementIn
   }
 }
 
+void RefinementUtils::RefineBoundary(TPZGeoMesh* gmesh, TPZVec<int>& refinementIndicator, TPZVec<MeshingUtils::BoundaryData>& bcData) {
+  int dim = gmesh->Dimension();
+  std::set<int> bcIds;
+  for (const auto& bc : bcData) {
+    bcIds.insert(bc.matid);
+  }
+  for (int64_t i = 0; i < refinementIndicator.size(); ++i) {
+    if (refinementIndicator[i] == 0) continue;
+    TPZGeoEl* gel = gmesh->Element(i);
+    if (!gel) DebugStop();
+    if (gel->Dimension() != dim) continue; 
+    int firstside = gel->FirstSide(dim-1);
+    int lastside = gel->FirstSide(dim);
+    for (int side = firstside; side < lastside; ++side) {
+      TPZGeoElSide gelSide(gel, side);
+      TPZGeoElSide neigh = gelSide.HasNeighbour(bcIds);
+      if (neigh) {
+        refinementIndicator[neigh.Element()->Index()] = 1;
+      }
+    }
+  }
+}
+
 void RefinementUtils::UniformRefinement(TPZGeoMesh *gmesh) {
   TPZCheckGeom checkgeom(gmesh);
   checkgeom.UniformRefine(1);
 }
 
 void RefinementUtils::AdaptiveRefinement(TPZGeoMesh *gmesh, TPZVec<int>& refinementIndicator) {
-  int dim = gmesh->Dimension();
-
   for (int64_t iel = 0; iel < refinementIndicator.size(); ++iel) {
     if (refinementIndicator[iel] == 0) continue;
     TPZGeoEl *gel = gmesh->Element(iel);
@@ -98,21 +119,6 @@ void RefinementUtils::AdaptiveRefinement(TPZGeoMesh *gmesh, TPZVec<int>& refinem
     if (gel->HasSubElement()) continue;
     TPZVec<TPZGeoEl *> pv;
     gel->Divide(pv);
-
-    // Refine boundary
-    int firstside = gel->FirstSide(dim-1);
-    int lastside = gel->FirstSide(dim);
-    for (int side = firstside; side < lastside; ++side) {
-      TPZGeoElSide gelSide(gel, side);
-      std::set<int> bcIds = {EDirichlet, ECylinder, ECylinderBase};
-      TPZGeoElSide neigh = gelSide.HasNeighbour(bcIds);
-      if (neigh) {
-        TPZGeoEl *neighGel = neigh.Element();
-        if (neighGel->Dimension() != dim-1) continue;
-        TPZVec<TPZGeoEl *> pv2;
-        neighGel->Divide(pv2);
-      }
-    }
   }
 }
 
@@ -155,5 +161,60 @@ void RefinementUtils::ConvergenceOrder(TPZFMatrix<REAL> &errors, TPZVec<REAL> &h
       std::cout << std::fixed << std::setprecision(2) << orders.Get(i,j) << " & ";
     }
     std::cout << std::endl;
+  }
+}
+
+void RefinementUtils::MarkToRefine(TPZVec<REAL> &elementErrors, TPZVec<int> &refinementIndicator, REAL threshold) {
+  int64_t nels = elementErrors.size();
+  refinementIndicator.Resize(nels);
+  refinementIndicator.Fill(0);
+
+  REAL maxError = 0.0;
+  for (int64_t iel = 0; iel < nels; ++iel) {
+    if (elementErrors[iel] > maxError) {
+      maxError = elementErrors[iel];
+    }
+  }
+
+  // Relative value criterion
+  REAL tol = threshold * maxError;
+  for (int64_t iel = 0; iel < nels; ++iel) {
+    if (elementErrors[iel] >= tol) {
+      refinementIndicator[iel] = 1;
+    }
+  }
+
+  // Absolute value criterion
+//   REAL tol = threshold;
+//   for (int64_t iel = 0; iel < nels; ++iel) {
+//     if (elementErrors[iel] >= tol) {
+//       refinementIndicator[iel] = 1;
+//     }
+//   }
+}
+
+void RefinementUtils::MarkToRefineNew(TPZVec<REAL> &elementErrors, TPZVec<int> &refinementIndicator, REAL threshold) {
+  int64_t nels = elementErrors.size();
+  refinementIndicator.Resize(nels);
+  refinementIndicator.Fill(0);
+  REAL totalError = 0.0;
+  for (int64_t iel = 0; iel < nels; ++iel) {
+      totalError += elementErrors[iel];
+  }
+  totalError = totalError * threshold;
+
+  // Sort the element errors in descending order
+  std::vector<std::pair<REAL, int64_t>> errorIndexPairs;
+  for (int64_t iel = 0; iel < nels; ++iel) {
+      errorIndexPairs.emplace_back(elementErrors[iel], iel);
+  }
+  std::sort(errorIndexPairs.begin(), errorIndexPairs.end());
+
+  REAL accumulatedError = 0.0;
+  while (accumulatedError < totalError && !errorIndexPairs.empty()) {
+      auto [error, index] = errorIndexPairs.back();
+      errorIndexPairs.pop_back();
+      accumulatedError += error;
+      refinementIndicator[index] = 1;
   }
 }

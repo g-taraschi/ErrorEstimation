@@ -23,70 +23,6 @@ REAL MeshingUtils::ElementDiameter(TPZGeoEl *gel) {
   return maxdist;
 }
 
-TPZGeoMesh* MeshingUtils::ReadGeoMesh(std::string file) {
-
-  std::string currentPath = std::filesystem::current_path();
-  std::string fatherPath = std::filesystem::path(currentPath).parent_path();
-  std::string path(fatherPath + "/Inputs/" + file);
-  TPZGeoMesh *gmesh = new TPZGeoMesh();
-  {
-    TPZGmshReader reader;
-    TPZManVector<std::map<std::string, int>, 4> stringtoint(4);
-    stringtoint[3]["volume_reservoir"] = EDomain;
-
-    stringtoint[2]["surface_wellbore_cylinder"] = ECylinder;
-    stringtoint[2]["surface_wellbore_heel"] = ECylinderBase;
-    stringtoint[2]["surface_wellbore_toe"] = ECylinderBase;
-    stringtoint[2]["surface_farfield"] = EDirichlet;
-    stringtoint[2]["surface_cap_rock"] = EDirichlet;
-
-    stringtoint[1]["curve_wellbore"] = ENone;
-    stringtoint[1]["curve_heel"] = ENone;
-    stringtoint[1]["curve_toe"] = ENone;
-
-    stringtoint[0]["point_heel"] = ENone;
-    stringtoint[0]["point_toe"] = ENone;
-
-    reader.SetDimNamePhysical(stringtoint);
-    reader.GeometricGmshMesh(path, gmesh);
-  }
-
-  //Remove gmsh boundary elements and create GeoElBC so normals are consistent
-  int64_t nel = gmesh->NElements();
-  for(int64_t el = 0; el < nel; el++){
-      TPZGeoEl *gel = gmesh->Element(el);
-      if(!gel || gel->Dimension() != gmesh->Dimension()-1) continue;
-      TPZGeoElSide gelside(gel);
-      TPZGeoElSide neigh = gelside.Neighbour();
-      gel->RemoveConnectivities();
-      int matid = gel->MaterialId();
-      delete gel;
-      TPZGeoElBC gbc(neigh, matid);
-  }
-
-  // Plot gmesh
-  std::ofstream out("geomesh.vtk");
-  TPZVTKGeoMesh::PrintGMeshVTK(gmesh, out);
-
-  return gmesh;
-}
-
-TPZGeoMesh* MeshingUtils::CreateGeoMesh2D(const TPZManVector<int, 2> &nelDiv,
-                            const TPZManVector<REAL, 2> &minX,
-                            const TPZManVector<REAL, 2> &maxX) {
-
-  TPZGeoMesh *gmesh = new TPZGeoMesh;
-  TPZGenGrid2D generator(nelDiv, minX, maxX);
-  generator.SetElementType(MMeshType::EQuadrilateral);
-  generator.Read(gmesh, EDomain);
-  generator.SetBC(gmesh, 4, EBoundary);
-  generator.SetBC(gmesh, 5, EBoundary);
-  generator.SetBC(gmesh, 6, EBoundary);
-  generator.SetBC(gmesh, 7, EBoundary);
-
-  return gmesh;
-}
-
 TPZGeoMesh* MeshingUtils::CreateGeoMesh2D(const TPZManVector<int, 2> &nelDiv,
                             const TPZManVector<REAL, 2> &minX,
                             const TPZManVector<REAL, 2> &maxX,
@@ -107,13 +43,50 @@ TPZGeoMesh* MeshingUtils::CreateGeoMesh2D(const TPZManVector<int, 2> &nelDiv,
 TPZGeoMesh* MeshingUtils::CreateGeoMesh3D(
   const TPZManVector<int, 3> &nelDiv, 
   const TPZManVector<REAL, 3> &minX, 
-  const TPZManVector<REAL, 3> &maxX) {
+  const TPZManVector<REAL, 3> &maxX,
+  const TPZManVector<int, 7> &matIds) {
 
   TPZGenGrid3D generator(minX, maxX, nelDiv, MMeshType::EHexahedral);
 
-  generator.BuildVolumetricElements(EDomain);
-  TPZGeoMesh *gmesh = generator.BuildBoundaryElements(EBoundary,
-    EBoundary, EBoundary, EBoundary, EBoundary, EBoundary);
+  generator.BuildVolumetricElements(matIds[0]);
+  TPZGeoMesh *gmesh = generator.BuildBoundaryElements(matIds[1], matIds[2], matIds[3], matIds[4], matIds[5], matIds[6]);
+
+  return gmesh;
+}
+
+TPZGeoMesh* MeshingUtils::ReadGeoMesh(std::string file, int EDomain, int EDirichlet, int EDirichlet2) {
+  std::string currentPath = std::filesystem::current_path();
+  std::string fatherPath = std::filesystem::path(currentPath).parent_path();
+  std::string path(fatherPath + "/Inputs/" + file);
+  TPZGeoMesh *gmesh = new TPZGeoMesh();
+  {
+    TPZGmshReader reader;
+    TPZManVector<std::map<std::string, int>, 4> stringtoint(4);
+
+    stringtoint[2]["Domain"] = EDomain;
+    stringtoint[1]["Outer"] = EDirichlet;
+    stringtoint[1]["Inner"] = EDirichlet2;
+
+    reader.SetDimNamePhysical(stringtoint);
+    reader.GeometricGmshMesh(path, gmesh);
+  }
+
+  // Remove gmsh boundary elements and create GeoElBC so normals are consistent
+  int64_t nel = gmesh->NElements();
+  for (int64_t el = 0; el < nel; el++) {
+    TPZGeoEl *gel = gmesh->Element(el);
+    if (!gel || gel->Dimension() != gmesh->Dimension() - 1) continue;
+    TPZGeoElSide gelside(gel);
+    TPZGeoElSide neigh = gelside.Neighbour();
+    gel->RemoveConnectivities();
+    int matid = gel->MaterialId();
+    delete gel;
+    TPZGeoElBC gbc(neigh, matid);
+  }
+
+  // Plot gmesh
+  std::ofstream out("importedMesh.vtk");
+  TPZVTKGeoMesh::PrintGMeshVTK(gmesh, out);
 
   return gmesh;
 }

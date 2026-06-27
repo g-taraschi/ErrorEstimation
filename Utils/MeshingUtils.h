@@ -13,20 +13,17 @@
 #include <tpzchangeel.h>
 #include <tpzgeoelrefpattern.h>
 
-enum EnumMatIds {
-  EDomain = 1,
-  EBoundary = 2,
-  ECylinder = 3,
-  ECylinderBase = 4,
-  EGoal = 5,
-  EDirichlet = 6,
-  ENeumann = 7,
-  ENone = -1
-};
-
 class MeshingUtils {
 
 public:
+
+  struct BoundaryData
+  {
+    int matid = -1; // bc material ID
+    int type;       // bc type 0: direct, 1: neumann
+    REAL value;     // bc value
+  };
+
   static REAL ElementDiameter(TPZGeoEl *gel);
 
   static TPZGeoMesh *CreateGeoMesh2D(const TPZManVector<int, 2> &nelDiv,
@@ -40,7 +37,8 @@ public:
 
   static TPZGeoMesh *CreateGeoMesh3D(const TPZManVector<int, 3> &nelDiv,
                                      const TPZManVector<REAL, 3> &minX,
-                                     const TPZManVector<REAL, 3> &maxX);
+                                     const TPZManVector<REAL, 3> &maxX,
+                                     const TPZManVector<int, 7> &matIds);
 
-  static TPZGeoMesh *ReadGeoMesh(std::string file);
+  static TPZGeoMesh *ReadGeoMesh(std::string file, int EDomain, int EDirichlet, int EDirichlet2);
 };
